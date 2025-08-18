@@ -59,7 +59,7 @@ from axiom_server.p2p.node import (
     PeerLink,
 )
 
-__version__ = "3.2.0" # Version bump for new reputation model
+__version__ = "3.2.1" # Version bump for new reputation model
 
 logger = logging.getLogger("axiom-node")
 logger.setLevel(logging.INFO)
