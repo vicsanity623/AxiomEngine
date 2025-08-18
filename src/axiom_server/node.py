@@ -257,7 +257,7 @@ class AxiomNode(P2PBaseNode):
             new_block_candidate, latest_block_before_mining, facts_sealed_in_block = None, None, []
             with db_lock, SessionMaker() as session:
                 try:
-                    topics = zeitgeist_engine.get_trending_topics(top_n=1)
+                    topics = zeitgeist_engine.get_trending_topics(top_n=5)
                     content_list = discovery_rss.get_content_from_prioritized_feed() if topics else []
                     if not content_list:
                         background_thread_logger.info("No new content found. Proceeding to verification phase.")

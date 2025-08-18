@@ -238,24 +238,17 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
 
-            // --- CONFIGURATION ---
-            // !!! TODO: Replace this with the URL of a publicly hosted Axiom node for the live website demo.
-            const AXIOM_NODE_URL = 'https://axiom-engine.duckdns.org'; // <-- Works for 1 year only!
-
-            // --- UI ELEMENTS ---
+            const AXIOM_NODE_URL = 'http://localhost:8002'; // Use localhost for local dev
             const queryInput = document.getElementById('query-input');
             const searchButton = document.getElementById('search-button');
             const resultsOutput = document.getElementById('results-output');
             const statusLight = document.getElementById('status-light');
             const statusText = document.getElementById('status-text');
 
-            // --- CORE FUNCTIONS ---
-
             const checkNodeStatus = async () => {
                 try {
                     const response = await fetch(`${AXIOM_NODE_URL}/status`);
                     if (!response.ok) throw new Error('Network response was not ok.');
-
                     const data = await response.json();
                     statusLight.classList.add('connected');
                     statusText.textContent = `Connected | Block: ${data.latest_block_height} | Node: v${data.version}`;
@@ -280,11 +273,8 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ query: query })
                     });
-
-                    if (!response.ok) {
-                        throw new Error(`Server responded with status: ${response.status}`);
-                    }
-
+                    if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
+                    
                     const data = await response.json();
                     displayResults(data.results);
 
@@ -297,52 +287,68 @@
                 }
             };
 
+            // --- THIS FUNCTION IS NOW UPGRADED TO HANDLE SOURCES ---
             const displayResults = (results) => {
                 if (!results || results.length === 0) {
                     resultsOutput.innerHTML = '<h4>No Relevant Facts Found</h4><p>The network searched the ledger but could not find a fact that semantically matched your question.</p>';
                     return;
                 }
 
-                // For this demo, we will focus on the top result
-                const topResult = results[0];
-                const content = topResult.content;
-                const similarity = topResult.similarity * 100; // Convert to percentage
+                let htmlContent = '';
 
-                let title = '';
-                let explanation = '';
+                results.forEach(result => {
+                    const content = result.content;
+                    const similarity = result.similarity * 100;
+                    const sources = result.sources || []; // Safely get sources or an empty array
 
-                if (similarity > 85) {
-                    title = `Direct Answer Found (${similarity.toFixed(1)}% Match)`;
-                    explanation = `The following fact is a high-confidence semantic match to your question:`;
-                } else if (similarity > 65) {
-                    title = `Related Fact Found (${similarity.toFixed(1)}% Match)`;
-                    explanation = `While not a direct answer, the following fact from the ledger is highly related to your query:`;
-                } else {
-                    title = `Possible Hint Found (${similarity.toFixed(1)}% Match)`;
-                    explanation = `I'm not very sure, but this is the most related information I could find in the ledger:`;
+                    let title = '';
+                    if (similarity > 85) title = `Direct Answer Found (${similarity.toFixed(1)}% Match)`;
+                    else if (similarity > 65) title = `Related Fact Found (${similarity.toFixed(1)}% Match)`;
+                    else title = `Possible Hint Found (${similarity.toFixed(1)}% Match)`;
+
+                    const sanitizedContent = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+                    // --- NEW: Build the source links ---
+                    let sourcesHtml = '<p><strong>Sources:</strong> ';
+                    if (sources.length > 0) {
+                        const links = sources.map(source => {
+                            // Ensure the link is a full URL
+                            const url = source.startsWith('http') ? source : `http://${source}`;
+                            return `<a href="${url}" target="_blank" rel="noopener noreferrer">${source}</a>`;
+                        }).join(', ');
+                        sourcesHtml += links;
+                    } else {
+                        sourcesHtml += '<em>Not available</em>';
+                    }
+                    sourcesHtml += '</p>';
+                    // --- END OF NEW PART ---
+
+                    htmlContent += `
+                        <div class="result-item" style="margin-bottom: 2rem; border-bottom: 1px solid #333; padding-bottom: 1rem;">
+                            <h4>${title}</h4>
+                            <blockquote>"${sanitizedContent}"</blockquote>
+                            ${sourcesHtml}
+                        </div>
+                    `;
+                });
+                
+                // Remove the border from the last item
+                const lastItemIndex = htmlContent.lastIndexOf('style="margin-bottom: 2rem; border-bottom: 1px solid #333; padding-bottom: 1rem;"');
+                if (lastItemIndex !== -1) {
+                    htmlContent = htmlContent.substring(0, lastItemIndex) + 'style="margin-bottom: 2rem;"' + htmlContent.substring(lastItemIndex + 'style="margin-bottom: 2rem; border-bottom: 1px solid #333; padding-bottom: 1rem;"'.length);
                 }
 
-                // Sanitize content before displaying
-                const sanitizedContent = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-                resultsOutput.innerHTML = `
-                    <h4>${title}</h4>
-                    <p><em>${explanation}</em></p>
-                    <blockquote>"${sanitizedContent}"</blockquote>
-                `;
+                resultsOutput.innerHTML = htmlContent;
             };
 
-            // --- EVENT LISTENERS ---
             searchButton.addEventListener('click', performSearch);
             queryInput.addEventListener('keypress', (event) => {
-                if (event.key === 'Enter') {
-                    performSearch();
-                }
+                if (event.key === 'Enter') performSearch();
             });
 
-            // --- INITIALIZATION ---
-            checkNodeStatus(); // Check status on page load
-            setInterval(checkNodeStatus, 60000); // And check every 60 seconds
+            checkNodeStatus();
+            setInterval(checkNodeStatus, 60000);
         });
     </script>
 </body>
