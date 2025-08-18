@@ -181,8 +181,6 @@ class SerializedSemantics(BaseModel):
 class Semantics(TypedDict):
     """Semantics dictionary."""
 
-
-
     doc: Doc
     subject: str
     object: str
@@ -221,6 +219,22 @@ class Entity(Base):
 
     def __repr__(self):
         return f"<Entity(name='{self.name}', type='{self.type}')>"
+
+
+class Peer(Base):
+    """Represents another node in the P2P network and stores its reputation."""
+    __tablename__ = 'peers'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_key: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    last_known_ip: Mapped[str] = mapped_column(String)
+    last_known_port: Mapped[int] = mapped_column(Integer)
+    reputation_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    first_seen: Mapped[str] = mapped_column(String, default=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    last_seen: Mapped[str] = mapped_column(String, default=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+    def __repr__(self):
+        return f"<Peer(key='{self.public_key[:10]}...', score={self.reputation_score})>"
 
 
 class Fact(Base):
@@ -462,7 +476,7 @@ def create_genesis_block(session: Session) -> None:
 def add_block_from_peer_data(
     session: Session,
     block_data: dict[str, Any],
-) -> Block:
+) -> Block | None:
     """Validate and add a new block received from a peer."""
     latest_local_block = get_latest_block(session)
     if not latest_local_block:
