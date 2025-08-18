@@ -52,6 +52,7 @@ from axiom_server.p2p.constants import (
     BOOTSTRAP_PORT,
 )
 from axiom_server.p2p.node import (
+    _serialize_public_key,
     ApplicationData,
     Message,
     Node as P2PBaseNode,
