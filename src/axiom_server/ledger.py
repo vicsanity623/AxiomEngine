@@ -232,6 +232,7 @@ class Peer(Base):
     reputation_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     first_seen: Mapped[str] = mapped_column(String, default=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     last_seen: Mapped[str] = mapped_column(String, default=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    last_connection_time: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
     def __repr__(self):
         return f"<Peer(key='{self.public_key[:10]}...', score={self.reputation_score})>"
