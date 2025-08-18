@@ -1,4 +1,4 @@
-"""Crucible - Semantic Analysis to extract Facts from text."""
+"""Crucible - Semantic Analysis to extract Facts and build a Knowledge Graph."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from axiom_server.common import NLP_MODEL, SUBJECTIVITY_INDICATORS
 
 # Local application imports
 from axiom_server.ledger import (
+    Entity,
     Fact,
     RelationshipType,
     Semantics,
@@ -41,9 +42,8 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
-# --- Logger Setup (preserved from your original file) ---
+# --- Logger Setup ---
 logger = logging.getLogger("crucible")
-# Avoid adding handlers multiple times if the module is reloaded
 if not logger.handlers:
     stdout_handler = logging.StreamHandler(stream=sys.stdout)
     formatter = logging.Formatter(
@@ -54,7 +54,7 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
-# --- Pre-compiled Regex (preserved from your original file) ---
+# --- Pre-compiled Regex ---
 METADATA_NOISE_PATTERNS = (
     re.compile(r"^\d+\s*"),
     re.compile(
@@ -65,7 +65,7 @@ METADATA_NOISE_PATTERNS = (
 )
 
 
-# --- NEW: Efficiently load and cache the NLI model ---
+# --- Efficiently load and cache the NLI model ---
 @cache
 def get_nli_classifier() -> NliPipeline | None:
     """Load and return a cached instance of the NLI pipeline."""
@@ -73,7 +73,6 @@ def get_nli_classifier() -> NliPipeline | None:
         logger.info(
             "Initializing Hugging Face NLI model for the first time...",
         )
-        # Now, Python knows what 'pipeline' is because we imported it at the top.
         return pipeline(
             "zero-shot-classification",
             model="typeform/distilbert-base-uncased-mnli",
@@ -144,7 +143,6 @@ class Pipeline(Generic[T]):
         return current_value
 
 
-# --- FIXED: Added HTML stripping as the first step ---
 TEXT_SANITIZATION: Pipeline[str] = Pipeline(
     "text sanitization",
     [
@@ -273,13 +271,8 @@ def extract_facts_from_text(text_content: str) -> list[Fact]:
     return facts
 
 
-# REMOVED: The old check_contradiction is no longer needed.
-# The NLI model in _infer_relationship is far more accurate.
-
-
 def check_corroboration(new_fact: Fact, existing_fact: Fact) -> bool:
     """Check for corroboration between Facts."""
-    # Simplified check. Can be improved with semantic similarity later.
     return bool(existing_fact.content[:50] == new_fact.content[:50])
 
 
@@ -307,19 +300,15 @@ def _extract_dates(text: str) -> list[datetime]:
     return found_dates
 
 
-# --- FIXED: Integrated NLI model for powerful contradiction detection ---
 def _infer_relationship(fact1: Fact, fact2: Fact) -> RelationshipType | None:
     """Analyze two facts and infers the nature of their relationship using an NLI model."""
-    # 1. Contradiction Check using the powerful NLI Model
     try:
         nli_classifier = get_nli_classifier()
-        # The premise is fact1, the hypothesis is fact2
         result = nli_classifier(
             fact1.content,
             candidate_labels=["contradiction", "entailment", "neutral"],
             hypothesis_template=f"This statement, '{fact2.content}', is a {{}}.",
         )
-        # Use a high confidence threshold to avoid false positives
         if (
             result["labels"][0] == "contradiction"
             and result["scores"][0] > 0.9
@@ -328,13 +317,11 @@ def _infer_relationship(fact1: Fact, fact2: Fact) -> RelationshipType | None:
     except Exception as e:
         logger.warning(f"Could not perform NLI check due to error: {e}")
 
-    # 2. Chronology Check
     dates1 = _extract_dates(fact1.content)
     dates2 = _extract_dates(fact2.content)
     if dates1 and dates2 and min(dates1) != min(dates2):
         return RelationshipType.CHRONOLOGY
 
-    # 3. Causality Check
     causal_words = {"because", "due to", "as a result", "caused by", "led to"}
     if any(word in fact1.content for word in causal_words) or any(
         word in fact2.content for word in causal_words
@@ -344,7 +331,20 @@ def _infer_relationship(fact1: Fact, fact2: Fact) -> RelationshipType | None:
     return None
 
 
-# --- REFACTORED: Unified and scalable logic for processing facts ---
+def get_or_create_entity(session: Session, name: str, type: str) -> Entity:
+    """
+    Finds an entity by name in the database or creates it if it doesn't exist.
+    """
+    normalized_name = name.lower().strip()
+    entity = session.query(Entity).filter(Entity.name == normalized_name).first()
+    if entity:
+        return entity
+    else:
+        new_entity = Entity(name=normalized_name, type=type)
+        session.add(new_entity)
+        return new_entity
+
+
 @dataclass
 class CrucibleFactAdder:
     """Processes a new fact against the existing knowledge base efficiently."""
@@ -356,13 +356,8 @@ class CrucibleFactAdder:
     addition_count: int = 0
 
     def add(self, fact: Fact):
-        """Add and process a fact against the database, now with robust, database-level duplicate handling.
-
-        database-level duplicate handling.
-        """
-        from sqlalchemy.exc import (
-            IntegrityError,
-        )  # Import the specific exception
+        """Add and process a fact, now including entity linking."""
+        from sqlalchemy.exc import IntegrityError
 
         assert fact.sources, "Fact must have a source before being added."
         primary_source = fact.sources[0]
@@ -370,24 +365,18 @@ class CrucibleFactAdder:
         fact.set_hash()
 
         try:
-            # We attempt to add the new fact and commit it immediately.
             self.session.add(fact)
             self.session.commit()
             self.addition_count += 1
 
-            # If the commit succeeds, it was a unique fact. We can now process it.
+            self._link_entities(fact)
+            
             self._process_relationships(fact)
             self.fact_indexer.add_fact(fact)
             self.session.commit()
 
         except IntegrityError:
-            # If the commit fails with an IntegrityError, it means the database's
-            # `unique=True` constraint was violated. The fact already exists.
-
-            # We must rollback the failed session to a clean state.
             self.session.rollback()
-
-            # Now, we find the existing fact and corroborate it with the new source.
             existing_fact = (
                 self.session.query(Fact).filter(Fact.hash == fact.hash).one()
             )
@@ -397,6 +386,28 @@ class CrucibleFactAdder:
             add_fact_object_corroboration(existing_fact, primary_source)
             self.session.commit()
 
+    def _link_entities(self, fact: Fact):
+        """
+        Extracts entities from a fact's semantics and links them in the database.
+        """
+        semantics = fact.get_semantics()
+        doc = semantics.get("doc")
+        if not doc:
+            return
+
+        logger.info(f"Linking entities for Fact ID {fact.id}...")
+        
+        linked_entities_count = 0
+        for ent in doc.ents:
+            if ent.label_ in ["PERSON", "GPE", "ORG"]:
+                entity_obj = get_or_create_entity(self.session, ent.text, ent.label_)
+                if entity_obj not in fact.entities:
+                    fact.entities.append(entity_obj)
+                    linked_entities_count += 1
+        
+        if linked_entities_count > 0:
+            logger.info(f"Successfully linked {linked_entities_count} entities to Fact ID {fact.id}.")
+
     def _process_relationships(self, new_fact: Fact):
         """Find potentially related facts and check for contradictions, corroborations, and other relationships."""
         new_doc = new_fact.get_semantics().get("doc")
@@ -404,7 +415,6 @@ class CrucibleFactAdder:
         if not new_doc or not nli_classifier:
             return
 
-        # Your entity-based query to find related facts is excellent for performance.
         new_entities = {
             ent.text.lower() for ent in new_doc.ents if len(ent.text) > 2
         }
@@ -428,8 +438,6 @@ class CrucibleFactAdder:
         )
 
         for existing_fact in potentially_related_facts:
-            # --- FIX 2 of 3: CONTRADICTION DETECTION ---
-            # premise = existing_fact.content # Removed since it's not used
             hypothesis = new_fact.content
 
             try:
@@ -455,16 +463,12 @@ class CrucibleFactAdder:
                     )
                     self.contradiction_count += 1
                     self.session.commit()
-                    # Once contradicted, we stop processing this fact further.
                     return
             except Exception as e:
                 logger.error(
                     f"Error during NLI check between facts {new_fact.id} and {existing_fact.id}: {e}",
                 )
 
-            # --- FIX 3 of 3: ENTITY RESOLUTION (Simplified) ---
-            # Your check_corroboration is a simple form of entity resolution.
-            # We can keep it to strengthen relationships.
             if check_corroboration(new_fact, existing_fact):
                 self.corroboration_count += 1
                 for source in new_fact.sources:

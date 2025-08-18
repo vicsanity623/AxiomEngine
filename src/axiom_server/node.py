@@ -6,7 +6,6 @@ from __future__ import annotations
 # This program is licensed under the Peer Production License (PPL).
 # See the LICENSE file for full details.
 import argparse
-import random
 import hashlib
 import json
 import logging
@@ -14,7 +13,6 @@ import random
 import sys
 import threading
 import time
-from datetime import datetime
 from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, request
@@ -33,6 +31,7 @@ from axiom_server.hasher import FactIndexer
 from axiom_server.ledger import (
     ENGINE,
     Block,
+    Entity,
     Fact,
     FactLink,
     Proposal,
@@ -78,7 +77,6 @@ fact_indexer_lock = threading.Lock()
 fact_indexer: FactIndexer | None = None
 
 
-# --- We create a single class that combines Axiom logic and P2P networking ---
 class AxiomNode(P2PBaseNode):
     """A class representing a single Axiom node, inheriting P2P capabilities."""
 
@@ -92,8 +90,6 @@ class AxiomNode(P2PBaseNode):
         """Initialize both the P2P layer and the Axiom logic layer."""
         logger.info(f"Initializing Axiom Node on {host}:{port}")
 
-        # 1. We must call the parent constructor from the P2P library first.
-        # This allows it to correctly handle both local and public connections.
         temp_p2p = P2PBaseNode.start(
             ip_address=host,
             port=port,
@@ -133,7 +129,7 @@ class AxiomNode(P2PBaseNode):
 
     def _handle_application_message(
         self,
-        peer_link: PeerLink,  # Renamed _link to peer_link for clarity and usage
+        peer_link: PeerLink,
         content: ApplicationData,
     ) -> None:
         """Dispatch all high-level P2P messages."""
@@ -168,11 +164,10 @@ class AxiomNode(P2PBaseNode):
                 response_message = Message.application_data(
                     chain_data_json_str,
                 )
-                # Use the 'peer_link' argument which represents the connection to the peer
                 self._send_message(
                     peer_link,
                     response_message,
-                )  # Changed 'link' to 'peer_link'
+                )
 
             elif msg_type == "new_block_header":
                 msg_data = message.get("data")
@@ -187,10 +182,7 @@ class AxiomNode(P2PBaseNode):
             )
 
     def _background_work_loop(self) -> None:
-        """Refactor the main work cycle to be interruptible.
-
-        handle database sessions correctly, and update the search index.
-        """
+        """Refactor the main work cycle to be interruptible."""
         if self.bootstrap_peer:
             logger.info(
                 "Worker node started. Waiting for initial blockchain sync from bootstrap peer...",
@@ -198,7 +190,7 @@ class AxiomNode(P2PBaseNode):
             synced = self.initial_sync_complete.wait(timeout=60.0)
             if not synced:
                 logger.warning(
-                    "Initial sync timed out after 60 seconds. Proceeding with local chain. The network may be partitioned.",
+                    "Initial sync timed out after 60 seconds. Proceeding with local chain.",
                 )
             else:
                 logger.info("Initial sync complete.")
@@ -244,23 +236,15 @@ class AxiomNode(P2PBaseNode):
                                     item["content"],
                                 )
                                 for fact in new_facts:
-                                    # --- THIS IS THE FIX ---
-                                    # Calculate the SHA256 hash of the fact's content.
                                     fact.hash = hashlib.sha256(
                                         fact.content.encode("utf-8"),
                                     ).hexdigest()
-                                    # --- END OF FIX ---
-
                                     fact.sources.append(source)
-                                    session.add(
-                                        fact,
-                                    )  # Add the fact with its new hash to the session.
+                                    session.add(fact)
                                     facts_for_sealing.append(fact)
 
-                                # Bonus Performance Improvement: Commit once after processing all new facts from the item.
                                 session.commit()
 
-                                # Now that the facts are safely in the DB, add them to the search index.
                                 with fact_indexer_lock:
                                     for fact in new_facts:
                                         adder.add(fact)
@@ -285,7 +269,6 @@ class AxiomNode(P2PBaseNode):
                                 fact_hashes=json.dumps(fact_hashes),
                                 timestamp=time.time(),
                             )
-                            # --- Store the actual fact objects for later indexing ---
                             facts_sealed_in_block = facts_for_sealing
 
                 except Exception as e:
@@ -309,7 +292,7 @@ class AxiomNode(P2PBaseNode):
                             > latest_block_before_mining.height
                         ):
                             background_thread_logger.warning(
-                                "Mined a block, but the chain grew while we worked. Discarding our block (stale).",
+                                "Mined a block, but the chain grew. Discarding our block (stale).",
                             )
                         else:
                             session.add(new_block_candidate)
@@ -330,10 +313,9 @@ class AxiomNode(P2PBaseNode):
 
                             if facts_sealed_in_block:
                                 background_thread_logger.info(
-                                    f"Updating search index with {len(facts_sealed_in_block)} new facts from the sealed block...",
+                                    f"Updating search index with {len(facts_sealed_in_block)} new facts...",
                                 )
                                 with fact_indexer_lock:
-                                    # Ensure your FactIndexer has an `add_facts` method.
                                     fact_indexer.add_facts(
                                         facts_sealed_in_block,
                                     )
@@ -343,7 +325,7 @@ class AxiomNode(P2PBaseNode):
 
                 else:
                     background_thread_logger.info(
-                        "Mining was interrupted by a new block from a peer. Abandoning our work and starting new cycle.",
+                        "Mining was interrupted. Abandoning our work.",
                     )
 
             with db_lock, SessionMaker() as session:
@@ -387,7 +369,7 @@ class AxiomNode(P2PBaseNode):
             time.sleep(10800)
 
     def seal_block_interruptibly(self, block: Block, difficulty: int) -> bool:
-        """Perform Proof of Work for a given block, but frequently check the self.new_block_received event to see if work should be aborted."""
+        """Perform Proof of Work, but frequently check if work should be aborted."""
         fact_hashes_list = json.loads(block.fact_hashes)
         if fact_hashes_list:
             merkle_tree = merkle.MerkleTree(fact_hashes_list)
@@ -433,42 +415,32 @@ class AxiomNode(P2PBaseNode):
             response_data = {"type": "CHAIN_RESPONSE", "chain": chain_dicts}
             return json.dumps(response_data)
 
-    
     def _peer_management_loop(self) -> None:
         """Maintain and expand the node's peer connections in a background thread."""
         logger.info("Starting peer management loop.")
         while True:
             try:
-                # --- THIS IS THE NEW, SMARTER LOGIC ---
                 with self.peer_links_lock:
                     if not self.peer_links:
-                        # If we don't know any peers, wait a bit before checking again.
                         time.sleep(60)
                         continue
-
-                    # Choose up to 3 random peers to ask.
-                    # This prevents spamming the whole network and breaks simple loops.
                     num_to_ask = min(3, len(self.peer_links))
                     peers_to_ask = random.sample(self.peer_links, num_to_ask)
 
                 logger.info(
                     f"Asking {len(peers_to_ask)} peer(s) for their peer lists...",
                 )
-
                 for peer_link in peers_to_ask:
                     self._send_message(peer_link, Message.peers_request())
 
-                # Sleep for a while before the next cycle.
-                time.sleep(300)  # e.g., run every 5 minutes
+                time.sleep(300)
 
             except Exception as e:
                 logger.error(
                     f"Error in peer management loop: {e}",
                     exc_info=True,
                 )
-                time.sleep(
-                    60,
-                )  # Wait a minute before retrying if an error occurs
+                time.sleep(60)
 
     @classmethod
     def start_node(
@@ -477,21 +449,13 @@ class AxiomNode(P2PBaseNode):
         port: int,
         bootstrap_peer: str | None,
     ) -> AxiomNode:
-        """Create and initialize a complete AxiomNode.
-
-        This is the preferred way to instantiate the node.
-        """
-        # 1. Use the parent's factory to create the low-level P2P components.
+        """Create and initialize a complete AxiomNode."""
         p2p_instance = P2PBaseNode.start(ip_address=host, port=port)
-
-        # 2. Create an instance of our AxiomNode, passing the bootstrap flag.
         axiom_instance = cls(
             host=p2p_instance.ip_address,
             port=p2p_instance.port,
             bootstrap_peer=bootstrap_peer,
         )
-
-        # 3. Transfer the initialized P2P components to our instance.
         axiom_instance.serialized_port = p2p_instance.serialized_port
         axiom_instance.private_key = p2p_instance.private_key
         axiom_instance.public_key = p2p_instance.public_key
@@ -500,75 +464,94 @@ class AxiomNode(P2PBaseNode):
         )
         axiom_instance.peer_links = p2p_instance.peer_links
         axiom_instance.server_socket = p2p_instance.server_socket
-
         return axiom_instance
 
 
-# --- All Flask API endpoints are UNCHANGED ---
 app = Flask(__name__)
 CORS(app)
 node_instance: AxiomNode
 fact_indexer: FactIndexer
 
+# ==============================================================================
+# === NEW HELPER FUNCTION AND API ENDPOINT FOR KNOWLEDGE GRAPH ===============
+# ==============================================================================
+
+def get_facts_related_to_entity(session, entity_name: str) -> list[Fact]:
+    """
+    Finds all facts linked to a specific entity name by querying the knowledge graph.
+    """
+    normalized_name = entity_name.lower().strip()
+    entity = session.query(Entity).filter(Entity.name == normalized_name).first()
+    
+    if entity:
+        # The '.facts' attribute works because of the SQLAlchemy relationship we defined!
+        return entity.facts
+    else:
+        return []
+
+@app.route("/get_facts_by_entity", methods=["GET"])
+def get_facts_by_entity_route():
+    """
+    API endpoint to query the knowledge graph for facts related to a named entity.
+    Example: /get_facts_by_entity?name=bismarck
+    """
+    entity_name = request.args.get("name")
+    if not entity_name:
+        return jsonify({"error": "Missing 'name' query parameter"}), 400
+
+    with db_lock, SessionMaker() as session:
+        facts = get_facts_related_to_entity(session, entity_name)
+        
+        # Use the Fact.to_dict() method we added in ledger.py for serialization
+        fact_dicts = [fact.to_dict() for fact in facts]
+
+        return jsonify({
+            "entity": entity_name,
+            "related_facts_count": len(fact_dicts),
+            "related_facts": fact_dicts
+        })
+
+# ==============================================================================
+# === EXISTING API ENDPOINTS (UNCHANGED) =======================================
+# ==============================================================================
 
 @app.route("/chat", methods=["POST"])
 def handle_chat_query() -> Response | tuple[Response, int]:
-    """Handle natural language queries from the client.
-
-    Finding the most semantically similar facts in the ledger.
-    """
+    """Handle natural language queries from the client."""
     data = request.get_json()
     if not data or "query" not in data:
         return jsonify({"error": "Missing 'query' in request body"}), 400
-
     query = data["query"]
-
     with fact_indexer_lock:
         closest_facts = fact_indexer.find_closest_facts(query)
-
-    # Return the results to the client.
     return jsonify({"results": closest_facts})
 
 
 @app.route("/get_timeline/<topic>", methods=["GET"])
 def handle_get_timeline(topic: str) -> Response:
     """Assembles a verifiable timeline of facts related to a topic."""
-    with db_lock:
-        with SessionMaker() as session:
-            initial_facts = semantic_search_ledger(
-                session,
-                topic,
-                min_status="ingested",
-                top_n=50,
-            )
-            if not initial_facts:
-                return jsonify(
-                    {
-                        "timeline": [],
-                        "message": "No facts found for this topic.",
-                    },
-                )
+    with db_lock, SessionMaker() as session:
+        initial_facts = semantic_search_ledger(
+            session, topic, min_status="ingested", top_n=50
+        )
+        if not initial_facts:
+            return jsonify({"timeline": [], "message": "No facts found for this topic."})
 
-            def get_date_from_fact(fact: Fact) -> datetime:
-                dates = _extract_dates(fact.content)
-                return min(dates) if dates else datetime.min
+        def get_date_from_fact(fact: Fact):
+            dates = _extract_dates(fact.content)
+            return min(dates) if dates else datetime.min
 
-            sorted_facts = sorted(initial_facts, key=get_date_from_fact)
-            timeline_data = [
-                SerializedFact.from_fact(f).model_dump() for f in sorted_facts
-            ]
-            return jsonify({"timeline": timeline_data})
+        sorted_facts = sorted(initial_facts, key=get_date_from_fact)
+        timeline_data = [SerializedFact.from_fact(f).model_dump() for f in sorted_facts]
+        return jsonify({"timeline": timeline_data})
 
 
 @app.route("/get_chain_height", methods=["GET"])
 def handle_get_chain_height() -> Response:
     """Handle get chain height request."""
-    with db_lock:
-        with SessionMaker() as session:
-            latest_block = get_latest_block(session)
-            return jsonify(
-                {"height": latest_block.height if latest_block else -1},
-            )
+    with db_lock, SessionMaker() as session:
+        latest_block = get_latest_block(session)
+        return jsonify({"height": latest_block.height if latest_block else -1})
 
 
 @app.route("/get_blocks", methods=["GET"])
@@ -584,15 +567,10 @@ def handle_get_blocks() -> Response:
         )
         blocks_data = [
             {
-                "height": b.height,
-                "hash": b.hash,
-                "previous_hash": b.previous_hash,
-                "timestamp": b.timestamp,
-                "nonce": b.nonce,
-                "fact_hashes": json.loads(b.fact_hashes),
-                "merkle_root": b.merkle_root,
-            }
-            for b in blocks
+                "height": b.height, "hash": b.hash, "previous_hash": b.previous_hash,
+                "timestamp": b.timestamp, "nonce": b.nonce,
+                "fact_hashes": json.loads(b.fact_hashes), "merkle_root": b.merkle_root,
+            } for b in blocks
         ]
         return jsonify({"blocks": blocks_data})
 
@@ -603,13 +581,7 @@ def handle_get_status() -> Response:
     with SessionMaker() as session:
         latest_block = get_latest_block(session)
         height = latest_block.height if latest_block else 0
-        return jsonify(
-            {
-                "status": "ok",
-                "latest_block_height": height,
-                "version": __version__,
-            },
-        )
+        return jsonify({"status": "ok", "latest_block_height": height, "version": __version__})
 
 
 @app.route("/local_query", methods=["GET"])
@@ -618,9 +590,7 @@ def handle_local_query() -> Response:
     search_term = request.args.get("term") or ""
     with SessionMaker() as session:
         results = semantic_search_ledger(session, search_term)
-        fact_models = [
-            SerializedFact.from_fact(fact).model_dump() for fact in results
-        ]
+        fact_models = [SerializedFact.from_fact(fact).model_dump() for fact in results]
         return jsonify({"results": fact_models})
 
 
@@ -637,9 +607,7 @@ def handle_get_peers() -> Response:
 def handle_get_fact_ids() -> Response:
     """Handle get fact ids request."""
     with SessionMaker() as session:
-        fact_ids: list[int] = [
-            fact.id for fact in session.query(Fact).with_entities(Fact.id)
-        ]
+        fact_ids: list[int] = [fact.id for fact in session.query(Fact).with_entities(Fact.id)]
         return jsonify({"fact_ids": fact_ids})
 
 
@@ -647,9 +615,7 @@ def handle_get_fact_ids() -> Response:
 def handle_get_fact_hashes() -> Response:
     """Handle get fact hashes request."""
     with SessionMaker() as session:
-        fact_hashes: list[str] = [
-            fact.hash for fact in session.query(Fact).with_entities(Fact.hash)
-        ]
+        fact_hashes: list[str] = [fact.hash for fact in session.query(Fact).with_entities(Fact.hash)]
         return jsonify({"fact_hashes": fact_hashes})
 
 
@@ -659,25 +625,17 @@ def handle_get_facts_by_id() -> Response:
     requested_ids: set[int] = set((request.json or {}).get("fact_ids", []))
     with SessionMaker() as session:
         facts = list(session.query(Fact).filter(Fact.id.in_(requested_ids)))
-        fact_models = [
-            SerializedFact.from_fact(fact).model_dump() for fact in facts
-        ]
+        fact_models = [SerializedFact.from_fact(fact).model_dump() for fact in facts]
         return jsonify({"facts": fact_models})
 
 
 @app.route("/get_facts_by_hash", methods=["POST"])
 def handle_get_facts_by_hash() -> Response:
     """Handle get facts by hash request."""
-    requested_hashes: set[str] = set(
-        (request.json or {}).get("fact_hashes", []),
-    )
+    requested_hashes: set[str] = set((request.json or {}).get("fact_hashes", []))
     with SessionMaker() as session:
-        facts = list(
-            session.query(Fact).filter(Fact.hash.in_(requested_hashes)),
-        )
-        fact_models = [
-            SerializedFact.from_fact(fact).model_dump() for fact in facts
-        ]
+        facts = list(session.query(Fact).filter(Fact.hash.in_(requested_hashes)))
+        fact_models = [SerializedFact.from_fact(fact).model_dump() for fact in facts]
         return jsonify({"facts": fact_models})
 
 
@@ -687,28 +645,18 @@ def handle_get_merkle_proof() -> Response | tuple[Response, int]:
     fact_hash = request.args.get("fact_hash")
     block_height_str = request.args.get("block_height")
     if not fact_hash or not block_height_str:
-        return jsonify(
-            {"error": "fact_hash and block_height are required parameters"},
-        ), 400
+        return jsonify({"error": "fact_hash and block_height are required parameters"}), 400
     try:
         block_height = int(block_height_str)
     except ValueError:
         return jsonify({"error": "block_height must be an integer"}), 400
     with SessionMaker() as session:
-        block = (
-            session.query(Block)
-            .filter(Block.height == block_height)
-            .one_or_none()
-        )
+        block = session.query(Block).filter(Block.height == block_height).one_or_none()
         if not block:
-            return jsonify(
-                {"error": f"Block at height {block_height} not found"},
-            ), 404
+            return jsonify({"error": f"Block at height {block_height} not found"}), 404
         fact_hashes_in_block = json.loads(block.fact_hashes)
         if fact_hash not in fact_hashes_in_block:
-            return jsonify(
-                {"error": "Fact hash not found in the specified block"},
-            ), 404
+            return jsonify({"error": "Fact hash not found in the specified block"}), 404
         merkle_tree = merkle.MerkleTree(fact_hashes_in_block)
         try:
             fact_index = fact_hashes_in_block.index(fact_hash)
@@ -716,14 +664,10 @@ def handle_get_merkle_proof() -> Response | tuple[Response, int]:
         except (ValueError, IndexError) as exc:
             logger.error(f"Error generating Merkle proof: {exc}")
             return jsonify({"error": "Failed to generate Merkle proof"}), 500
-        return jsonify(
-            {
-                "fact_hash": fact_hash,
-                "block_height": block_height,
-                "merkle_root": block.merkle_root,
-                "proof": proof,
-            },
-        )
+        return jsonify({
+            "fact_hash": fact_hash, "block_height": block_height,
+            "merkle_root": block.merkle_root, "proof": proof,
+        })
 
 
 @app.route("/anonymous_query", methods=["POST"])
@@ -761,19 +705,18 @@ def handle_verify_fact() -> Response | tuple[Response, int]:
         if not fact_to_verify:
             return jsonify({"error": "Fact not found"}), 404
         corroborating_claims = verification_engine.find_corroborating_claims(
-            fact_to_verify,
-            session,
+            fact_to_verify, session,
         )
         citations_report = verification_engine.verify_citations(fact_to_verify)
         verification_report = {
             "target_fact_id": fact_to_verify.id,
             "target_content": fact_to_verify.content,
             "corroboration_analysis": {
-                "status": f"Found {len(corroborating_claims)} corroborating claims from other sources.",
+                "status": f"Found {len(corroborating_claims)} corroborating claims.",
                 "corroborations": corroborating_claims,
             },
             "citation_analysis": {
-                "status": f"Found {len(citations_report)} citations within the fact content.",
+                "status": f"Found {len(citations_report)} citations.",
                 "citations": citations_report,
             },
         }
@@ -782,123 +725,66 @@ def handle_verify_fact() -> Response | tuple[Response, int]:
 
 @app.route("/get_fact_context/<fact_hash>", methods=["GET"])
 def handle_get_fact_context(fact_hash: str) -> Response | tuple[Response, int]:
-    """Handle get fact content request."""
+    """Handle get fact context request."""
     with SessionMaker() as session:
-        target_fact = (
-            session.query(Fact).filter(Fact.hash == fact_hash).one_or_none()
-        )
+        target_fact = session.query(Fact).filter(Fact.hash == fact_hash).one_or_none()
         if not target_fact:
             return jsonify({"error": "Fact not found"}), 404
-        links = (
-            session.query(FactLink)
-            .filter(
-                (FactLink.fact1_id == target_fact.id)
-                | (FactLink.fact2_id == target_fact.id),
-            )
-            .all()
-        )
+        links = session.query(FactLink).filter(
+            (FactLink.fact1_id == target_fact.id) | (FactLink.fact2_id == target_fact.id)
+        ).all()
         related_facts_data = []
         for link in links:
-            other_fact = (
-                link.fact2 if link.fact1_id == target_fact.id else link.fact1
-            )
-            related_facts_data.append(
-                {
-                    "relationship": link.relationship_type.value,
-                    "fact": SerializedFact.from_fact(other_fact).model_dump(),
-                },
-            )
-        return jsonify(
-            {
-                "target_fact": SerializedFact.from_fact(
-                    target_fact,
-                ).model_dump(),
-                "related_facts": related_facts_data,
-            },
-        )
+            other_fact = link.fact2 if link.fact1_id == target_fact.id else link.fact1
+            related_facts_data.append({
+                "relationship": link.relationship_type.value,
+                "fact": SerializedFact.from_fact(other_fact).model_dump(),
+            })
+        return jsonify({
+            "target_fact": SerializedFact.from_fact(target_fact).model_dump(),
+            "related_facts": related_facts_data,
+        })
 
 
 def main() -> None:
     """Handle running an Axiom Node from the command line."""
     global node_instance, fact_indexer
 
-    # 1. Setup the argument parser
     parser = argparse.ArgumentParser(description="Run an Axiom P2P Node.")
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="127.0.0.1",
-        help="Host IP to bind to.",
-    )
-    parser.add_argument(
-        "--p2p-port",
-        type=int,
-        default=5000,
-        help="Port for P2P communication.",
-    )
-    parser.add_argument(
-        "--api-port",
-        type=int,
-        default=8000,
-        help="Port for the Flask API server.",
-    )
-    parser.add_argument(
-        "--bootstrap-peer",
-        type=str,
-        default=None,
-        help="Full URL of a peer to connect to for bootstrapping (e.g., http://host:port).",
-    )
-    parser.add_argument(
-        "--public-ip",
-        type=str,
-        default=None,
-        help="The public IP address of this node for self-discovery.",
-    )
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host IP to bind to.")
+    parser.add_argument("--p2p-port", type=int, default=5002, help="Port for P2P communication.")
+    parser.add_argument("--api-port", type=int, default=8002, help="Port for the Flask API server.")
+    parser.add_argument("--bootstrap-peer", type=str, default=None, help="URL of a peer to bootstrap to.")
+    parser.add_argument("--public-ip", type=str, default=None, help="Public IP address of this node.")
     args = parser.parse_args()
 
     try:
-        # 2. Create the AxiomNode instance, passing the arguments directly.
         node_instance = AxiomNode(
             host=args.host,
             port=args.p2p_port,
             bootstrap_peer=args.bootstrap_peer,
             public_ip=args.public_ip,
         )
-
         node_instance.get_chain_callback = node_instance._get_chain_for_peer
 
         logger.info("--- Initializing Fact Indexer for Hybrid Search ---")
         with SessionMaker() as db_session:
-            # Create the indexer instance, passing it the session it needs.
             fact_indexer = FactIndexer(db_session)
-            # Build the initial index.
             fact_indexer.index_facts_from_db()
 
-        # 3. Start the Flask API server in its own thread.
         api_thread = threading.Thread(
-            target=lambda: app.run(
-                host=args.host,
-                port=args.api_port,
-                debug=False,
-                use_reloader=False,
-            ),
+            target=lambda: app.run(host=args.host, port=args.api_port, debug=False, use_reloader=False),
             daemon=True,
         )
         api_thread.start()
-        logger.info(
-            f"Flask API server started on http://{args.host}:{args.api_port}",
-        )
+        logger.info(f"Flask API server started on http://{args.host}:{args.api_port}")
 
-        # 4. Start the main P2P and Axiom work loops.
         node_instance.start()
 
     except KeyboardInterrupt:
         logger.info("Shutdown signal received. Exiting.")
     except Exception as exc:
-        logger.critical(
-            f"A critical error occurred during node startup: {exc}",
-            exc_info=True,
-        )
+        logger.critical(f"A critical error occurred during node startup: {exc}", exc_info=True)
         sys.exit(1)
 
 

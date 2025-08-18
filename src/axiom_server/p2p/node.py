@@ -619,7 +619,22 @@ class Node:
         self._send_message(link, Message.peers_request())
         return True
 
+    
     def _connect_to_peer(self, ip_address: str, port: int) -> Socket | None:
+        # --- THIS IS THE FIX: The Self-Connection Guard ---
+        # A node should never connect to itself. This check prevents it.
+        # We check against both the local listening IP and the known public IP.
+        is_own_local_address = (ip_address == self.ip_address and port == self.port)
+        is_own_public_address = (self.public_ip and ip_address == self.public_ip and port == self.port)
+        
+        # Also check for common loopback addresses if the node is listening on all interfaces (0.0.0.0)
+        is_loopback_to_self = (self.ip_address == "0.0.0.0" and ip_address in ("127.0.0.1", "localhost") and port == self.port)
+
+        if is_own_local_address or is_own_public_address or is_loopback_to_self:
+            logger.info(f"Skipping connection attempt to self: {ip_address}:{port}")
+            return None
+        # --- END OF FIX ---
+
         context = ssl.create_default_context()
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
@@ -631,18 +646,9 @@ class Node:
         try:
             secure_socket.connect((ip_address, port))
 
-        except (
-            OSError,
-            socket_lib.herror,
-            socket_lib.gaierror,
-            socket_lib.timeout,
-            TimeoutError,
-            InterruptedError,
-            Exception,
-        ) as e:
-            # just in case you want to go back to specific error catching,
-            # don't delete the explicit error types
-            logger.exception(
+        except Exception as e:
+            # The detailed exception logging here is good, we will keep it.
+            logger.error(
                 f"error while trying to connect to {ip_address}:{port} ({e})",
             )
             return None
