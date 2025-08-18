@@ -357,25 +357,46 @@ class AxiomNode(P2PBaseNode):
             return json.dumps({"type": "CHAIN_RESPONSE", "chain": chain_dicts})
 
     def _peer_management_loop(self) -> None:
+        """Maintain and expand connections, now preferring high-reputation peers."""
         logger.info("Starting peer management loop.")
         while True:
             try:
                 with db_lock, SessionMaker() as session:
+                    # Fetch all known peers, prioritizing those with higher scores
                     high_reputation_peers = session.query(Peer).filter(Peer.reputation_score > TERMINATION_THRESHOLD).order_by(Peer.reputation_score.desc()).limit(20).all()
+                
                 if not high_reputation_peers:
                     time.sleep(60)
                     continue
+                
+                # Choose up to 3 peers to query, weighted towards the best ones
                 num_to_ask = min(3, len(high_reputation_peers))
                 peers_to_ask_records = random.sample(high_reputation_peers, num_to_ask)
+                
                 logger.info(f"Asking {len(peers_to_ask_records)} reputable peer(s) for their peer lists...")
+                
                 with self.peer_links_lock:
                     for peer_record in peers_to_ask_records:
-                        peer_link = self.search_link_by_peer(lambda p: p.public_key and p.public_key.hex() == peer_record.public_key)
+                        # --- THIS IS THE FIX ---
+                        # We must serialize the live peer's public key object into a string
+                        # to compare it with the public key string from the database.
+                        def find_peer_by_key(p: P2PBaseNode.Peer):
+                            if not p.public_key:
+                                return False
+                            live_key_str = _serialize_public_key(p.public_key).decode('utf-8')
+                            return live_key_str == peer_record.public_key
+
+                        peer_link = self.search_link_by_peer(find_peer_by_key)
+                        # --- END OF FIX ---
+
                         if peer_link:
                             self._send_message(peer_link, Message.peers_request())
                         else:
+                            # If not currently connected, try to connect to them
                             self._create_link(peer_record.last_known_ip, peer_record.last_known_port)
+
                 time.sleep(300)
+
             except Exception as e:
                 logger.error(f"Error in peer management loop: {e}", exc_info=True)
                 time.sleep(60)
