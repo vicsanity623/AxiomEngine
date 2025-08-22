@@ -239,8 +239,7 @@
         document.addEventListener('DOMContentLoaded', () => {
 
             // --- CONFIGURATION ---
-            // !!! TODO: Replace this with the URL of a publicly hosted Axiom node for the live website demo.
-            const AXIOM_NODE_URL = 'https://axiom-engine.duckdns.org'; // <-- Works for 1 year only!
+            const AXIOM_NODE_URL = 'https://d089f71ab6a5.ngrok-free.app';
 
             // --- UI ELEMENTS ---
             const queryInput = document.getElementById('query-input');
@@ -253,7 +252,11 @@
 
             const checkNodeStatus = async () => {
                 try {
-                    const response = await fetch(`${AXIOM_NODE_URL}/status`);
+                    // *** FIX #1: Added headers to bypass ngrok warning ***
+                    const response = await fetch(`${AXIOM_NODE_URL}/status`, {
+                        headers: { 'ngrok-skip-browser-warning': 'true' }
+                    });
+
                     if (!response.ok) throw new Error('Network response was not ok.');
 
                     const data = await response.json();
@@ -277,7 +280,11 @@
                 try {
                     const response = await fetch(`${AXIOM_NODE_URL}/chat`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        // *** FIX #2: Added ngrok header to the existing headers ***
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'ngrok-skip-browser-warning': 'true'
+                        },
                         body: JSON.stringify({ query: query })
                     });
 
@@ -303,10 +310,9 @@
                     return;
                 }
 
-                // For this demo, we will focus on the top result
                 const topResult = results[0];
                 const content = topResult.content;
-                const similarity = topResult.similarity * 100; // Convert to percentage
+                const similarity = topResult.similarity * 100;
 
                 let title = '';
                 let explanation = '';
@@ -322,7 +328,6 @@
                     explanation = `I'm not very sure, but this is the most related information I could find in the ledger:`;
                 }
 
-                // Sanitize content before displaying
                 const sanitizedContent = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
                 resultsOutput.innerHTML = `
