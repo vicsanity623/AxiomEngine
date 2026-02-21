@@ -1,43 +1,104 @@
 # Axiom - synthesizer.py
-# The V2 Knowledge Graph engine.
+# Copyright (C) 2025 The Axiom Contributors
+# --- V3 WEIGHTED KNOWLEDGE GRAPHING ---
 
 import spacy
+import logging
 from ledger import get_all_facts_for_analysis, insert_relationship
+from axiom_model_loader import load_nlp_model
 
-NLP_MODEL = spacy.load("en_core_web_sm")
+logger = logging.getLogger(__name__)
+
+
+NLP_MODEL = load_nlp_model()
+
+IGNORED_ENTITIES = {
+    "today", "yesterday", "tomorrow", "year", "years", "week", "weeks", 
+    "percent", "millions", "billions", "one", "two", "first", "second",
+    "government", "police", "state", "city", "news", "report", "study"
+}
+
+def get_weighted_entities(text):
+    """
+    Extracts entities and assigns a 'relevance weight'.
+    People/Orgs are worth more points than Locations.
+    Returns a dictionary: { 'entity_name': weight }
+    """
+    if not text or not NLP_MODEL:
+        return {}
+    
+    doc = NLP_MODEL(text)
+    entities = {}
+    
+    for ent in doc.ents:
+        clean_text = ent.text.lower().strip()
+        
+        if len(clean_text) < 3 or clean_text in IGNORED_ENTITIES:
+            continue
+        if clean_text.isdigit():
+            continue
+            
+        if ent.label_ in {'PERSON', 'ORG', 'EVENT', 'WORK_OF_ART'}:
+            weight = 3
+        elif ent.label_ in {'GPE', 'PRODUCT', 'LAW'}:
+            weight = 1
+        else:
+            continue
+            
+        if clean_text in entities:
+            entities[clean_text] = max(entities[clean_text], weight)
+        else:
+            entities[clean_text] = weight
+            
+    return entities
 
 def link_related_facts(new_facts_batch):
     """
-    Compares a batch of new facts against the entire ledger to find and store relationships.
+    Compares a batch of new facts against the ledger.
+    Creates links only if the 'Connection Score' is high enough.
     """
-    print("\n--- [The Synthesizer] Beginning Knowledge Graph linking...")
-    if not new_facts_batch:
-        print("[The Synthesizer] No new facts to link. Cycle complete.")
+    if not NLP_MODEL or not new_facts_batch:
+        return
+
+    logger.info("\n\033[96m--- [The Synthesizer] Beginning Knowledge Graph linking... ---\033[0m")
+    
+    new_facts_data = []
+    for fact in new_facts_batch:
+        ents = get_weighted_entities(fact['fact_content'])
+        if ents:
+            new_facts_data.append({'id': fact['fact_id'], 'entities': ents})
+
+    if not new_facts_data:
+        logger.info("[The Synthesizer] No distinctive entities found in new facts. Skipping linking.")
         return
 
     all_facts_in_ledger = get_all_facts_for_analysis()
+    logger.info(f"\033[96m[The Synthesizer] Indexing {len(all_facts_in_ledger)} existing facts for cross-reference...\033[0m")
+
+    links_created = 0
     
-    links_found = 0
-    for new_fact in new_facts_batch:
-        new_doc = NLP_MODEL(new_fact['fact_content'])
-        new_entities = {ent.text.lower() for ent in new_doc.ents}
+    for existing_fact in all_facts_in_ledger:
+        existing_ents = get_weighted_entities(existing_fact['fact_content'])
+        
+        if not existing_ents: continue
 
-        for existing_fact in all_facts_in_ledger:
-            if new_fact['fact_id'] == existing_fact['fact_id']:
-                continue
-
-            existing_doc = NLP_MODEL(existing_fact['fact_content'])
-            existing_entities = {ent.text.lower() for ent in existing_doc.ents}
-
-            # Find the number of entities that are shared between the two facts.
-            shared_entities = new_entities.intersection(existing_entities)
+        for new_fact in new_facts_data:
+            if new_fact['id'] == existing_fact['fact_id']: continue
             
-            # The core relationship rule:
-            if len(shared_entities) > 0:
-                # Our "score" is simply the number of shared entities.
-                # A higher score means a stronger contextual link.
-                relationship_score = len(shared_entities)
-                insert_relationship(new_fact['fact_id'], existing_fact['fact_id'], relationship_score)
-                links_found += 1
+            total_score = 0
+            shared_terms = []
+            
+            for entity, weight in new_fact['entities'].items():
+                if entity in existing_ents:
+                    avg_weight = (weight + existing_ents[entity]) / 2
+                    total_score += avg_weight
+                    shared_terms.append(entity)
+            
+            if total_score >= 2:
+                insert_relationship(new_fact['id'], existing_fact['fact_id'], int(total_score))
+                links_created += 1
 
-    print(f"[The Synthesizer] Linking complete. Found and stored {links_found} new relationships.")
+    if links_created > 0:
+        logger.info(f"\033[92m[The Synthesizer] Linking complete. Established {links_created} new connections.\033[0m")
+    else:
+        logger.info("[The Synthesizer] No strong correlations found.")

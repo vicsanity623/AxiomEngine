@@ -1,26 +1,31 @@
-# --- Python Cache Files ---
-# These are temporary files Python creates to run faster.
-# They should never be committed to the repository.
+# Build artifacts
+dist/
+build/
+*.spec
+
+# Local Database
+*.db
+
+# Generated Visualizations
+axiom_graph.html
+*.html_tmp
+
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# --- Local Axiom Files ---
-# Do not commit the local database ledger file.
-# Each node operator will generate their own.
-axiom_ledger.db
-
-# --- Environment Files ---
-# Never commit files containing secret keys.
-.env
-.venv
-venv/
-
 # --- IDE / Editor specific files ---
 .vscode/
 .idea/
 
-# --- OS-specific files ---
-# For macOS
+# Local Environment
+.venv
+venv/
+env/
+lib/
+.env
+
+# MacOS junk
 .DS_Store

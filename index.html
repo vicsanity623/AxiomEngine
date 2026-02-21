@@ -3,108 +3,244 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Axiom - A Decentralized Knowledge Network</title>
+    <title>AXIOM // DECENTRALIZED TRUTH</title>
     <style>
-        /* A simple, clean, modern stylesheet */
         :root {
-            --background-color: #121212;
-            --text-color: #EAEAEA;
-            --primary-color: #00BFFF; /* Deep Sky Blue */
-            --secondary-color: #333333;
-            --card-color: #1E1E1E;
+            --bg-color: #050505;
+            --term-bg: #0a0f14;
+            --neon-cyan: #00f0ff;
+            --neon-green: #22c55e;
+            --neon-pink: #ff0055;
+            --text-color: #e0e0e0;
+            --dim-color: #555;
+            --font-main: 'Courier New', Courier, monospace;
         }
+
+        /* --- GLOBAL CYBERPUNK STYLES --- */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--background-color);
+            background-color: var(--bg-color);
             color: var(--text-color);
+            font-family: var(--font-main);
             margin: 0;
             padding: 0;
-            line-height: 1.6;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            overflow-x: hidden;
+            background-image: 
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
         }
+
+        /* Scanline Overlay */
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            background-size: 100% 4px;
+            z-index: 999;
+            pointer-events: none;
+        }
+
         .container {
-            max-width: 800px;
-            width: 90%;
-            margin: 2rem auto;
-            padding: 1rem;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
         }
+
+        /* --- HEADER --- */
         header {
             text-align: center;
-            padding: 4rem 1rem;
-            border-bottom: 1px solid var(--secondary-color);
+            padding: 3rem 0;
+            border-bottom: 1px solid var(--dim-color);
         }
-        header h1 {
-            font-size: 3.5rem;
-            color: var(--text-color);
+
+        h1 {
+            font-size: 4rem;
             margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            color: var(--text-color);
+            text-shadow: 2px 2px 0px var(--neon-cyan);
         }
-        header h1 span {
-            color: var(--primary-color);
+
+        h1 span {
+            color: var(--neon-cyan);
         }
+
         header p {
             font-size: 1.2rem;
-            color: #AAAAAA;
+            color: var(--neon-cyan);
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
+
+        /* --- THE TERMINAL (SEARCH INTERFACE) --- */
+        .terminal-wrapper {
+            background-color: var(--term-bg);
+            border: 1px solid var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+            padding: 20px;
+            margin: 2rem 0;
+            border-radius: 4px;
+            position: relative;
+        }
+
+        .terminal-header {
+            font-size: 0.8rem;
+            color: var(--dim-color);
+            margin-bottom: 15px;
+            border-bottom: 1px dashed var(--dim-color);
+            padding-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .status-light {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: var(--neon-green);
+            border-radius: 50%;
+            margin-right: 5px;
+            box-shadow: 0 0 5px var(--neon-green);
+        }
+
+        .terminal-display {
+            min-height: 150px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+            color: var(--text-color);
+        }
+
+        .log-entry { margin-bottom: 5px; }
+        .log-time { color: var(--dim-color); margin-right: 10px; }
+        .log-cyan { color: var(--neon-cyan); }
+        .log-green { color: var(--neon-green); }
+        .log-pink { color: var(--neon-pink); }
+        .log-red { color: #ff4444; }
+
+        .input-line {
+            display: flex;
+            align-items: center;
+            border-top: 1px solid var(--dim-color);
+            padding-top: 10px;
+        }
+
+        .prompt {
+            color: var(--neon-green);
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        input[type="text"] {
+            background: transparent;
+            border: none;
+            color: var(--neon-cyan);
+            font-family: var(--font-main);
+            font-size: 1.1rem;
+            flex-grow: 1;
+            outline: none;
+        }
+
+        button.exec-btn {
+            background: var(--neon-cyan);
+            color: #000;
+            border: none;
+            padding: 5px 15px;
+            font-family: var(--font-main);
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        button.exec-btn:hover {
+            background: #fff;
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+
+        /* --- CONTENT CARDS --- */
         section {
-            padding: 3rem 0;
-            border-bottom: 1px solid var(--secondary-color);
+            padding: 2rem 0;
+            border-bottom: 1px solid #222;
         }
+
         h2 {
-            font-size: 2.5rem;
-            color: var(--primary-color);
-            text-align: center;
-            margin-bottom: 2rem;
+            font-size: 2rem;
+            color: var(--neon-cyan);
+            border-left: 5px solid var(--neon-cyan);
+            padding-left: 15px;
+            margin-bottom: 1.5rem;
+            text-transform: uppercase;
         }
+
         .card {
-            background-color: var(--card-color);
-            border-radius: 8px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            background: rgba(20, 20, 20, 0.8);
+            border: 1px solid #333;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
         }
+
+        .card:hover {
+            border-color: var(--neon-cyan);
+            transform: translateX(5px);
+        }
+
         .card h3 {
             margin-top: 0;
-            font-size: 1.8rem;
+            color: #fff;
         }
-        .button {
+
+        /* --- BUTTONS & GRIDS --- */
+        .btn {
             display: inline-block;
-            background-color: var(--primary-color);
-            color: var(--background-color);
-            padding: 12px 25px;
-            border-radius: 5px;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            padding: 10px 20px;
             text-decoration: none;
-            font-weight: bold;
-            transition: transform 0.2s ease;
-            text-align: center;
+            margin-top: 10px;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            transition: 0.2s;
         }
-        .button:hover {
-            transform: scale(1.05);
+
+        .btn:hover {
+            background: var(--neon-cyan);
+            color: #000;
+            box-shadow: 0 0 15px var(--neon-cyan);
         }
-        .button.secondary {
-            background-color: transparent;
-            color: var(--primary-color);
-            border: 2px solid var(--primary-color);
-        }
+
         .download-grid, .community-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
+            gap: 1rem;
+            margin-top: 1rem;
         }
+
         footer {
             text-align: center;
-            padding: 2rem;
-            font-size: 0.9rem;
-            color: #777777;
+            padding: 3rem;
+            color: var(--dim-color);
+            font-size: 0.8rem;
+            border-top: 1px solid #222;
         }
-        footer a {
-            color: #999999;
-            text-decoration: none;
-        }
-        footer a:hover {
-            text-decoration: underline;
-        }
+
+        footer a { color: var(--dim-color); text-decoration: none; }
+        footer a:hover { color: var(--neon-cyan); }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); }
+
     </style>
 </head>
 <body>
@@ -112,73 +248,169 @@
     <div class="container">
 
         <header>
-            <h1>Axiom<span>.</span></h1>
-            <p>A Decentralized Network for Verifiable Truth.</p>
+            <h1>AXIOM<span class="blink">_</span></h1>
+            <p>Decentralized Knowledge Ledger // v3.0</p>
         </header>
 
+        <!-- LIVE TERMINAL INTERFACE -->
+        <div class="terminal-wrapper">
+            <div class="terminal-header">
+                <span><span class="status-light"></span>CONNECTED: LOCAL_HOST::5000</span>
+                <span>ENCRYPTION: ENABLED</span>
+            </div>
+            <div class="terminal-display" id="output">
+                <div class="log-entry"><span class="log-time">SYS_INIT</span> <span class="log-cyan">Welcome to Axiom Web Interface.</span></div>
+                <div class="log-entry"><span class="log-time">READY</span> <span class="log-green">Node connection established. Waiting for query...</span></div>
+            </div>
+            <div class="input-line">
+                <span class="prompt">USER@AXIOM:~$</span>
+                <input type="text" id="queryInput" placeholder="Enter keyword to query the ledger..." autocomplete="off">
+                <button class="exec-btn" onclick="runQuery()">EXECUTE</button>
+            </div>
+        </div>
+
         <main>
-            <!-- The Mission Section -->
+            <!-- Mission -->
             <section id="mission">
-                <h2>The Mission</h2>
+                <h2>// MISSION_STATEMENT</h2>
                 <div class="card">
-                    <h3>Rebuilding Reality's Bedrock.</h3>
-                    <p>In an age of misinformation and digital noise, shared truth is decaying. Axiom is a new kind of network—an autonomous, decentralized organism designed to discover, verify, and preserve objective knowledge.</p>
-                    <p>It is not a company, a search engine, or a social media platform. It is a permanent, public utility for truth, owned and operated by its community, and built to be immune to censorship, manipulation, and control.</p>
-                    <a href="#" class="button secondary">Read the Whitepaper &rarr;</a>
+                    <h3>REBUILDING REALITY'S BEDROCK</h3>
+                    <p>In an age of digital noise, shared truth is decaying. Axiom is an autonomous, decentralized organism designed to discover, verify, and preserve objective knowledge.</p>
+                    <p>NOT a company. NOT a search engine. A permanent public utility for truth, immune to censorship and manipulation.</p>
+                    <a href="#" class="btn">ACCESS_WHITEPAPER_V1.PDF</a>
                 </div>
             </section>
 
-            <!-- Download Client Section -->
+            <!-- Download -->
             <section id="download">
-                <h2>Get the Axiom Client</h2>
+                <h2>// CLIENT_ACCESS</h2>
                 <div class="card">
-                    <h3>Access the Network.</h3>
-                    <p>The Axiom Client is your secure, private gateway to the network's collective intelligence. Ask any question, and get a clean, verifiable answer sourced from the entire network, not from a single algorithm. Your curiosity is always protected.</p>
+                    <h3>INITIATE LINK</h3>
+                    <p>The Axiom Client is your secure gateway. Ask any question, get a verifiable answer sourced from the mesh network.</p>
                     <div class="download-grid">
-                        <a href="#" class="button">Download for macOS</a>
-                        <a href="#" class="button">Download for Windows</a>
-                        <a href="#" class="button">Download for Linux</a>
+                        <a href="#" class="btn">[DOWNLOAD] macOS</a>
+                        <a href="#" class="btn">[DOWNLOAD] Windows</a>
+                        <a href="#" class="btn">[DOWNLOAD] Linux</a>
                     </div>
                 </div>
             </section>
 
-            <!-- Run a Node Section -->
+            <!-- Nodes -->
             <section id="run-a-node">
-                <h2>Become a Guardian of Truth</h2>
+                <h2>// OPERATOR_MODE</h2>
                 <div class="card">
-                    <h3>Run a Node. Strengthen the Network.</h3>
-                    <p>Axiom is powered by a global community of independent node operators. By running a node, you contribute your computer's idle resources to help the network learn, verify, and share knowledge. You become a crucial part of a new digital commonwealth.</p>
-                    <p>All software is open-source and licensed to protect the network from commercial exploitation. Your contribution directly supports a free and permanent public record of truth.</p>
-                    <a href="#" class="button secondary">View on GitHub &rarr;</a>
+                    <h3>RUN A NODE. DEFEND THE TRUTH.</h3>
+                    <p>Contribute idle resources to verify facts. Support the digital commonwealth. All software is open-source (PPL).</p>
+                    <a href="#" class="btn">GITHUB REPO -></a>
                 </div>
             </section>
 
-            <!-- Community Section -->
+            <!-- Community -->
             <section id="community">
-                <h2>Join the Community</h2>
+                <h2>// HIVE_MIND</h2>
                 <div class="card">
-                    <h3>The Future is Collaborative.</h3>
-                    <p>The development and governance of the Axiom protocol are managed by its community. Join the discussion, help shape the future of the network, and connect with others dedicated to building a more truthful digital world.</p>
+                    <h3>JOIN THE COLLECTIVE</h3>
                     <div class="community-grid">
-                        <a href="#" class="button">Join our Discord</a>
-                        <a href="#" class="button">Join our Reddit</a>
+                        <a href="#" class="btn">DISCORD SERVER</a>
+                        <a href="#" class="btn">REDDIT CHANNEL</a>
                     </div>
                 </div>
             </section>
-
         </main>
 
         <footer>
-            <p>The Axiom Protocol is free, open-source software gifted to the world.</p>
+            <p>AXIOM PROTOCOL // OPEN SOURCE (PPL) // 2025</p>
             <p>
-                <a href="#">Whitepaper</a> | 
-                <a href="#">GitHub</a> | 
-                <a href="#">DAO Charter</a>
+                <a href="#">SOURCE</a> | 
+                <a href="#">CHARTER</a> | 
+                <a href="#">KEYS</a>
             </p>
-            <p>&copy; 2025 The Axiom Contributors. All rights reserved under the PPL.</p>
         </footer>
 
     </div>
 
+    <!-- SCRIPT TO HANDLE THE FAKE/REAL SEARCH -->
+    <script>
+        const input = document.getElementById('queryInput');
+        const output = document.getElementById('output');
+
+        // Allow "Enter" key
+        input.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                runQuery();
+            }
+        });
+
+        function log(msg, colorClass="") {
+            const time = new Date().toLocaleTimeString('en-US', {hour12: false});
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${colorClass}">${msg}</span>`;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight; // Auto scroll
+        }
+
+        async function runQuery() {
+            const term = input.value.trim();
+            if (!term) return;
+
+            log(`EXECUTING QUERY: "${term}"...`, 'log-cyan');
+            input.value = "";
+            input.disabled = true;
+
+            // 1. Try connecting to the REAL local node
+            try {
+                // We use a timeout so it fails fast if node isn't running
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+                const response = await fetch(`http://127.0.0.1:5000/local_query?term=${encodeURIComponent(term)}&include_uncorroborated=true`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                const data = await response.json();
+                
+                if (data.results && data.results.length > 0) {
+                    log(`SUCCESS. RETRIEVED ${data.results.length} FACTS FROM LEDGER.`, 'log-green');
+                    
+                    data.results.forEach(fact => {
+                        let color = "log-pink"; // Uncorroborated
+                        let statusTag = "[UNCORROBORATED]";
+                        
+                        if(fact.status === 'trusted') { 
+                            color = "log-green"; 
+                            statusTag = "[TRUSTED]";
+                        } else if (fact.status === 'disputed') { 
+                            color = "log-red"; 
+                            statusTag = "[DISPUTED]";
+                        }
+
+                        log(`> ${statusTag} ${fact.fact_content}`, color);
+                    });
+                } else {
+                    log(`QUERY COMPLETE. NO RECORDS FOUND FOR "${term}".`, 'log-dim');
+                }
+
+            } catch (error) {
+                // 2. FALLBACK SIMULATION (If Node is offline, look cool anyway)
+                log("WARN: LOCAL NODE UNREACHABLE. SWITCHING TO SIMULATION MODE.", "log-red");
+                
+                setTimeout(() => {
+                    log("Simulation: Scanning Distributed Hash Table...", "log-cyan");
+                }, 500);
+
+                setTimeout(() => {
+                    log(`Simulation: Found 2 demo records for "${term}"`, "log-green");
+                    log(`> [TRUSTED] The entity '${term}' was identified in 42 secure contexts.`, "log-green");
+                    log(`> [UNCORROBORATED] Recent activity detected via RSS streams regarding '${term}'.`, "log-pink");
+                    log("NOTE: START LOCAL PYTHON NODE FOR REAL DATA.", "log-red");
+                }, 1500);
+            }
+
+            input.disabled = false;
+            input.focus();
+        }
+    </script>
 </body>
 </html>

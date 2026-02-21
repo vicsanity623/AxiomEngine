@@ -1,127 +1,159 @@
 # Axiom - crucible.py
 # Copyright (C) 2025 The Axiom Contributors
-# This program is licensed under the Peer Production License (PPL).
-# See the LICENSE file for full details.
-# --- V2.2: ADDED TEXT SANITIZATION PRE-PROCESSOR ---
+# --- V3 STRICT GRAMMAR & ENTITY ENFORCEMENT ---
 
-import spacy
-import hashlib
 import re
+import hashlib
+import spacy
+import logging
+from axiom_model_loader import load_nlp_model
 from ledger import (
-    get_all_facts_for_analysis, 
+    get_all_facts_for_analysis,
     mark_facts_as_disputed,
     find_similar_fact_from_different_domain,
     update_fact_corroboration,
     insert_uncorroborated_fact
 )
 
-NLP_MODEL = spacy.load("en_core_web_sm")
+logger = logging.getLogger(__name__)
+
+NLP_MODEL = load_nlp_model()
+
+
 SUBJECTIVITY_INDICATORS = {
-    'believe', 'think', 'feel', 'seems', 'appears', 'argues', 'suggests', 
-    'contends', 'opines', 'speculates', 'especially', 'notably', 'remarkably', 
-    'surprisingly', 'unfortunately', 'clearly', 'obviously', 'reportedly', 
-    'allegedly', 'routinely', 'likely', 'apparently', 'essentially', 'largely',
-    'wedded to', 'new heights', 'war on facts', 'playbook', 'art of',
-    'therefore', 'consequently', 'thus', 'hence', 'conclusion',
-    'untrue', 'false', 'incorrect', 'correctly', 'rightly', 'wrongly',
-    'inappropriate', 'disparage', 'sycophants', 'unwelcome', 'flatly'
+    "believe", "think", "feel", "seems", "appears", "argues", "suggests",
+    "contends", "opines", "speculates", "reckons", "estimates", "imagines",
+    "hopefully", "unfortunately", "clearly", "obviously", "reportedly",
+    "allegedly", "rumored", "likely", "probably", "possibly", "opinion",
+    "view", "perspective", "stance", "take", "feels", "felt", "thought"
 }
 
-def _sanitize_and_preprocess_text(text):
-    """
-    Cleans up extracted text before NLP analysis. Now includes a metadata filter
-    to remove common noise from web articles.
-    """
-    # --- THIS IS THE UPGRADE ---
-    # Rule 1: Remove read times and comment counts (e.g., "42 2 min read ")
-    # This regex looks for digits and spaces at the start, followed by "min read".
-    text = re.sub(r'^\d+[\d\s]*min read\s*', '', text)
-    
-    # Rule 2: Remove "Advertisement" from the start of a sentence (case-insensitive)
-    if text.lower().startswith('advertisement '):
-        text = text[14:] # Slice the string to remove "Advertisement "
-        
-    # Rule 3 (from before): Fix run-on sentences common in topic pages
-    text = re.sub(r'(\d{4})([A-Z])', r'\1. \2', text)
-    
-    # Rule 4 (from before): Standardize all whitespace to single spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-    
+def _sanitize_text(text):
+    """Basic cleanup before NLP processing."""
+    if not text: return ""
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"Read more.*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
-def _get_subject_and_object(doc):
-    """A helper function to extract the main subject and object from a spaCy doc."""
-    subject = None
-    d_object = None
-    for token in doc:
-        if "nsubj" in token.dep_:
-            subject = token.lemma_.lower()
-        if "dobj" in token.dep_ or "pobj" in token.dep_ or "attr" in token.dep_:
-            d_object = token.lemma_.lower()
-    return subject, d_object
+def _is_valid_grammatical_sentence(doc):
+    """
+    CRITICAL: Ensures the text is a complete sentence, not a fragment.
+    Must have a Subject (nsubj) and a Root Verb.
+    """
+    has_subject = any(token.dep_ == "nsubj" or token.dep_ == "nsubjpass" for token in doc)
+    has_verb = any(token.pos_ == "VERB" for token in doc)
+    
+    if not has_subject or not has_verb:
+        return False
+    return True
 
-def _check_for_contradiction(new_fact_doc, all_existing_facts):
-    """Analyzes a new fact against all existing facts to find a direct contradiction."""
-    new_subject, new_object = _get_subject_and_object(new_fact_doc)
-    if not new_subject or not new_object: return None
-    for existing_fact in all_existing_facts:
-        if existing_fact['status'] == 'disputed': continue
-        existing_fact_doc = NLP_MODEL(existing_fact['fact_content'])
-        existing_subject, existing_object = _get_subject_and_object(existing_fact_doc)
-        if new_subject == existing_subject and new_object != existing_object:
-            new_is_negated = any(tok.dep_ == 'neg' for tok in new_fact_doc)
-            existing_is_negated = any(tok.dep_ == 'neg' for tok in existing_fact_doc)
-            if new_is_negated != existing_is_negated or (not new_is_negated and not existing_is_negated):
-                 return existing_fact
+def _contains_named_entity(doc):
+    """
+    Quality Control: A 'Fact' is usually about specific entities.
+    Reject sentences like "He went to the store" (Who is He?).
+    Accept "Elon Musk went to the store."
+    """
+    valid_labels = {'ORG', 'PERSON', 'GPE', 'EVENT', 'LAW', 'LOC'}
+    for ent in doc.ents:
+        if ent.label_ in valid_labels:
+            return True
+    return False
+
+def _check_for_contradiction(new_doc, all_existing_facts):
+    """
+    Scans the ledger for direct contradictions.
+    Logic: Same Subject + Same Verb + One is Negated ('not') vs One is Positive.
+    """
+    new_subj = next((t.text.lower() for t in new_doc if "subj" in t.dep_), None)
+    new_root = next((t.lemma_.lower() for t in new_doc if t.dep_ == "ROOT"), None)
+    new_is_negated = any(t.dep_ == "neg" for t in new_doc)
+
+    if not new_subj or not new_root: return None
+
+    for fact in all_existing_facts:
+        if fact['status'] == 'disputed': continue
+        
+        content = fact['fact_content']
+        existing_doc = NLP_MODEL(content)
+        
+        ex_subj = next((t.text.lower() for t in existing_doc if "subj" in t.dep_), None)
+        ex_root = next((t.lemma_.lower() for t in existing_doc if t.dep_ == "ROOT"), None)
+        ex_is_negated = any(t.dep_ == "neg" for t in existing_doc)
+
+        if new_subj == ex_subj and new_root == ex_root:
+            if new_is_negated != ex_is_negated:
+                return fact
+                
     return None
 
 def extract_facts_from_text(source_url, text_content):
     """
-    The main V2.2 Crucible pipeline. It now sanitizes text before analysis.
+    Main processing pipeline.
+    1. Sanitize
+    2. Split into sentences
+    3. Filter for Grammar & Entities
+    4. Check Ledger
+    5. Save
     """
-    print(f"\n--- [The Crucible] Analyzing content from {source_url[:60]}...")
-    newly_created_facts = []
-    try:
-        source_domain_match = re.search(r'https?://(?:www\.)?([^/]+)', source_url)
-        if not source_domain_match: return newly_created_facts
-        source_domain = source_domain_match.group(1)
-
-        # Step 1: Sanitize the text
-        sanitized_text = _sanitize_and_preprocess_text(text_content)
-        
-        all_facts_in_ledger = get_all_facts_for_analysis()
-        doc = NLP_MODEL(sanitized_text)
-        
-        for sent in doc.sents:
-            if len(sent.text.split()) < 8 or len(sent.text.split()) > 100: continue
-            if not sent.ents: continue
-            if any(indicator in sent.text.lower() for indicator in SUBJECTIVITY_INDICATORS): continue
-            
-            fact_content = sent.text.strip()
-            new_fact_doc = NLP_MODEL(fact_content)
-            
-            # Step 2: Check for Contradictions
-            contradictory_fact = _check_for_contradiction(new_fact_doc, all_facts_in_ledger)
-            if contradictory_fact:
-                new_fact_id = hashlib.sha256(fact_content.encode('utf-8')).hexdigest()
-                mark_facts_as_disputed(contradictory_fact['fact_id'], new_fact_id, fact_content, source_url)
-                continue
-
-            # Step 3: Check for Corroboration
-            # We now correctly pass all_facts_in_ledger to the function.
-            similar_fact = find_similar_fact_from_different_domain(fact_content, source_domain, all_facts_in_ledger)
-            if similar_fact:
-                update_fact_corroboration(similar_fact['fact_id'], source_url)
-                continue
-
-            # Step 4: Insert as a new, uncorroborated fact
-            fact_id = hashlib.sha256(fact_content.encode('utf-8')).hexdigest()
-            new_fact_data = insert_uncorroborated_fact(fact_id, fact_content, source_url)
-            if new_fact_data:
-                newly_created_facts.append(new_fact_data)
-
-    except Exception as e:
-        print(f"[The Crucible] ERROR: Failed to process text. {e}")
+    logger.info(f"\033[2m--- [The Crucible] Analyzing content from {source_url[:50]}... ---\033[0m")
     
-    print(f"[The Crucible] Analysis complete. Created {len(newly_created_facts)} new facts.")
+    text_content = _sanitize_text(text_content)
+    doc = NLP_MODEL(text_content)
+    
+    all_facts_in_ledger = get_all_facts_for_analysis()
+    newly_created_facts = []
+    contradictions = 0
+    
+    for sent in doc.sents:
+        raw_sent = sent.text.strip()
+        
+        if len(raw_sent) < 25 or len(raw_sent) > 400:
+            continue
+            
+        if any(word in raw_sent.lower() for word in SUBJECTIVITY_INDICATORS):
+            continue
+
+        if raw_sent.lower().startswith(("i ", "we ", "my ", "our ")):
+            continue
+
+        sent_doc = NLP_MODEL(raw_sent)
+        
+        if not _is_valid_grammatical_sentence(sent_doc):
+            continue
+            
+        if not _contains_named_entity(sent_doc):
+            continue
+
+        conflicting_fact = _check_for_contradiction(sent_doc, all_facts_in_ledger)
+        if conflicting_fact:
+            mark_facts_as_disputed(
+                conflicting_fact['fact_id'], 
+                "new_hash_placeholder", 
+                raw_sent, 
+                source_url
+            )
+            contradictions += 1
+            continue
+            
+        domain = re.search(r"https?://(?:www\.)?([^/]+)", source_url).group(1)
+        similar_fact = find_similar_fact_from_different_domain(raw_sent, domain, all_facts_in_ledger)
+        
+        if similar_fact:
+            update_fact_corroboration(similar_fact['fact_id'], source_url)
+            continue
+            
+        fact_id = hashlib.sha256(raw_sent.encode('utf-8')).hexdigest()
+        result = insert_uncorroborated_fact(fact_id, raw_sent, source_url)
+        if result:
+            newly_created_facts.append(result)
+
+    if contradictions > 0:
+        logger.info(f"\033[94m[The Crucible] Analysis complete. Found {contradictions} contradictions.\033[0m")
+    
+    if newly_created_facts:
+        logger.info(f"\033[96m[The Crucible] Created {len(newly_created_facts)} new facts.\033[0m")
+    else:
+        logger.info(f"\033[90m[The Crucible] Analysis complete. No high-confidence facts extracted.\033[0m")
+        
     return newly_created_facts
