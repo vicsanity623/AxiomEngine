@@ -255,7 +255,7 @@
         <!-- LIVE TERMINAL INTERFACE -->
         <div class="terminal-wrapper">
             <div class="terminal-header">
-                <span><span class="status-light"></span>CONNECTED: LOCAL_HOST::5000</span>
+                <span><span class="status-light"></span>CONNECTED: LOCAL_HOST::8009</span>
                 <span>ENCRYPTION: ENABLED</span>
             </div>
             <div class="terminal-display" id="output">
@@ -353,64 +353,82 @@
         async function runQuery() {
             const term = input.value.trim();
             if (!term) return;
-
+        
+            // If you type: connect https://your-tailscale-url.ts.net
+            if (term.startsWith("connect ")) {
+                const newUrl = term.split(" ")[1].replace(/\/$/, ""); // Get URL and strip trailing slash
+                localStorage.setItem("axiom_node_url", newUrl);
+                log(`NODE LINK UPDATED: ${newUrl}`, "log-green");
+                
+                // Update the UI header to show the new connection
+                document.querySelector('.terminal-header span').innerHTML = 
+                    `<span class="status-light"></span>CONNECTED: ${newUrl}`;
+                
+                input.value = "";
+                return;
+            }
+        
             log(`EXECUTING QUERY: "${term}"...`, 'log-cyan');
             input.value = "";
             input.disabled = true;
-
-            // 1. Try connecting to the REAL local node
+        
+            // Determine which node to talk to (Default to your local port 8009)
+            const activeNode = localStorage.getItem("axiom_node_url") || "http://127.0.0.1:8009";
+        
             try {
-                // We use a timeout so it fails fast if node isn't running
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-                const response = await fetch(`http://127.0.0.1:5000/local_query?term=${encodeURIComponent(term)}&include_uncorroborated=true`, {
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+                // Use the activeNode variable instead of a hardcoded string
+                const response = await fetch(`${activeNode}/local_query?term=${encodeURIComponent(term)}&include_uncorroborated=true`, {
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
-
+        
                 const data = await response.json();
                 
                 if (data.results && data.results.length > 0) {
                     log(`SUCCESS. RETRIEVED ${data.results.length} FACTS FROM LEDGER.`, 'log-green');
                     
                     data.results.forEach(fact => {
-                        let color = "log-pink"; // Uncorroborated
+                        let color = "log-pink";
                         let statusTag = "[UNCORROBORATED]";
-                        
-                        if(fact.status === 'trusted') { 
-                            color = "log-green"; 
-                            statusTag = "[TRUSTED]";
-                        } else if (fact.status === 'disputed') { 
-                            color = "log-red"; 
-                            statusTag = "[DISPUTED]";
-                        }
-
+                        if(fact.status === 'trusted') { color = "log-green"; statusTag = "[TRUSTED]"; }
+                        else if (fact.status === 'disputed') { color = "log-red"; statusTag = "[DISPUTED]"; }
+        
                         log(`> ${statusTag} ${fact.fact_content}`, color);
                     });
                 } else {
                     log(`QUERY COMPLETE. NO RECORDS FOUND FOR "${term}".`, 'log-dim');
                 }
-
+        
             } catch (error) {
-                // 2. FALLBACK SIMULATION (If Node is offline, look cool anyway)
-                log("WARN: LOCAL NODE UNREACHABLE. SWITCHING TO SIMULATION MODE.", "log-red");
+                log(`WARN: NODE [${activeNode}] UNREACHABLE.`, "log-red");
                 
                 setTimeout(() => {
                     log("Simulation: Scanning Distributed Hash Table...", "log-cyan");
                 }, 500);
-
+        
                 setTimeout(() => {
                     log(`Simulation: Found 2 demo records for "${term}"`, "log-green");
                     log(`> [TRUSTED] The entity '${term}' was identified in 42 secure contexts.`, "log-green");
                     log(`> [UNCORROBORATED] Recent activity detected via RSS streams regarding '${term}'.`, "log-pink");
-                    log("NOTE: START LOCAL PYTHON NODE FOR REAL DATA.", "log-red");
+                    log("NOTE: TYPE 'connect <url>' TO LINK A LIVE NODE.", "log-red");
                 }, 1500);
             }
-
+        
             input.disabled = false;
             input.focus();
         }
+        
+        // Add this line at the bottom of your <script> to load the saved node on page load
+        window.onload = () => {
+            const savedNode = localStorage.getItem("axiom_node_url");
+            if (savedNode) {
+                document.querySelector('.terminal-header span').innerHTML = 
+                    `<span class="status-light"></span>CONNECTED: ${savedNode}`;
+            }
+        };
     </script>
 </body>
 </html>
