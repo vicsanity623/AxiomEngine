@@ -32,7 +32,7 @@ setup_logger()
 logger = logging.getLogger("node")
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 node_instance = None
 
