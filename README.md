@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Axiom Banner](https://raw.githubusercontent.com/ArtisticIntentionz/AxiomEngine/main/main/Axiom_logo.PNG)
+![Axiom Banner](https://raw.githubusercontent.com/vicsanity623/AxiomEngine/main/main/Axiom.PNG)
 
 [![License: PPL](https://img.shields.io/badge/License-PPL-blue.svg)](https://github.com/ArtisticIntentionz/AxiomEngine/blob/main/LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-cyan.svg)](https://www.python.org/downloads/)
