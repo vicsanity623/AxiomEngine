@@ -217,11 +217,17 @@ def handle_get_facts_by_id():
     facts_to_return = [f for f in all_facts if f['fact_id'] in requested_ids]
     return jsonify({'facts': facts_to_return})
 
-# --- BOOTSTRAP LOGIC ---
+@app.route('/')
+def serve_index():
+    try:
+        with open('index.html', 'r') as f:
+            return f.read()
+    except:
+        return "index.html not found.", 404
+
 if __name__ == "__main__" or "gunicorn" in sys.modules:
     if node_instance is None:
         print_banner()
-        # Set port to 8009 to match your Tailscale Funnel setup
         port_val = int(os.environ.get("PORT", 8009))
         bootstrap_val = os.environ.get("BOOTSTRAP_PEER")
         

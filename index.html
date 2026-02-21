@@ -421,12 +421,12 @@
             input.focus();
         }
         
-        // Add this line at the bottom of your <script> to load the saved node on page load
         window.onload = () => {
             const savedNode = localStorage.getItem("axiom_node_url");
             if (savedNode) {
+                const displayUrl = savedNode.replace(/^https?:\/\//, "");
                 document.querySelector('.terminal-header span').innerHTML = 
-                    `<span class="status-light"></span>CONNECTED: ${savedNode}`;
+                    `<span class="status-light"></span>CONNECTED: ${displayUrl}`;
             }
         };
     </script>
