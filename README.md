@@ -14,7 +14,7 @@
 
 **Autonomous. Anonymous. Anti-AI. The deterministic bedrock for shared reality.**
 
-[Website](https://axiom.network) • [Documentation](docs/INTRO.md) • [DAO Charter](DAO.md) • [Discord](https://discord.gg/axiom)
+[Website](TBD) • [Documentation](TBD) • [DAO Charter](DAO.md) • [Discord](TBD)
 
 </div>
 
@@ -45,9 +45,58 @@ Every Axiom node operates as a self-sustaining organism, executing a continuous 
 ---
 
 ## ◈ Unique Technological Pillars
+````mermaid
+flowchart TD
+    Start([Start Heartbeat]) --> Discovery[Zeitgeist Engine:<br/>Scans Public RSS Headlines]
+    Discovery --> Extraction[Pathfinder:<br/>Fortified Scraper Pulls Content]
+    Extraction --> Validation{The Crucible:<br/>Analytical NLP}
+    
+    Validation -->|Reject| Noise[Speculation, Bias,<br/>Subjectivity Filtered]
+    Validation -->|Verify| Corroboration[Corroboration Rule:<br/>Multiple Source Agreement]
+    
+    Corroboration --> Linking[The Synthesizer:<br/>Knowledge Graph Entity Linking]
+    Linking --> Reflection[Lexical Mesh:<br/>Linguistic Shredding & Synapses]
+    
+    Reflection --> Memory[(Immutable SQL Ledger:<br/>Facts + Brain)]
+    Memory --> Sleep[Idle State:<br/>Wait for Next Cycle]
+    Sleep --> Start
 
+    subgraph Brain_Architecture [Deterministic Intelligence]
+        Linking
+        Reflection
+        Memory
+    end
+
+    style Brain_Architecture fill:#0a0f14,stroke:#ff00ff,color:#ff00ff
+    style Validation fill:#1e293b,stroke:#00f0ff,color:#00f0ff
+    style Start fill:#22c55e,stroke:#fff,color:#000
+    style Noise fill:#ff0055,stroke:#fff,color:#fff
+````
 ### 🧠 The Lexical Mesh (The Glass Box)
 Unlike LLMs that use trillions of hidden weights, Axiom learns language through **Linguistic Atoms** and **Neural Synapses** stored in an open SQL ledger. You can query exactly *why* Axiom associates two concepts. **Zero GPU required.**
+````mermaid
+graph TD
+    subgraph Global_Mesh [◈ Axiom Self-Healing Mesh ◈]
+        A((Genesis Node<br/>iMac 8009)) <-->|Gossip Discovery| B((Peer Node B<br/>London))
+        B <-->|Fact Sync| C((Peer Node C<br/>Tokyo))
+        C <-->|Linguistic Gossip| A
+        B <-->|Reputation Check| D((Peer Node D<br/>Berlin))
+        D <-->|Gossip Discovery| A
+    end
+
+    subgraph Resilience_Logic [Security & Persistence]
+        Node_Down{Node Offline?} -->|YES| Mesh_Active[Remaining Nodes<br/>Maintain Ledger]
+        Mesh_Active -->|Return| Re-Sync[Automatic Handshake<br/>Catch-up Sync]
+        Re-Sync -->|Success| Integrity_Restored[Network 100% Corrected]
+    end
+
+    style Global_Mesh fill:#0a0f14,stroke:#00f0ff,color:#e0e0e0
+    style A fill:#00f0ff,stroke:#fff,color:#000
+    style B fill:#1e293b,stroke:#00f0ff,color:#fff
+    style C fill:#1e293b,stroke:#00f0ff,color:#fff
+    style D fill:#1e293b,stroke:#00f0ff,color:#fff
+    style Resilience_Logic fill:#050505,stroke:#22c55e,color:#22c55e
+````
 
 ### 🕵️ Radical Anonymity
 Queries are routed through a private P2P mesh. Using the built-in **Tailscale Funnel** integration, you can securely query your node from your mobile device anywhere in the world.
@@ -118,6 +167,6 @@ Axiom provides high-fidelity tools to watch the network think in real-time.
 Axiom is a **Peer Production** project. We need architects, auditors, and node operators to help defend the bedrock of reality. 
 
 *   **License:** [Peer Production License (PPL)](LICENSE) - Ensuring Axiom remains a non-commercial utility for the people.
-*   **Discord:** [Join the Collective](https://discord.gg/axiom)
+*   **Discord:** [Join the Collective](TBD)
 
 **◈ Thank you for defending the bedrock of reality. ◈**
