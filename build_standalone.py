@@ -29,11 +29,6 @@ def get_spacy_data():
     path = os.path.dirname(en_core_web_sm.__file__)
     sep = ";" if os.name == "nt" else ":"
     
-    subfolders = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f)) and f.startswith("en_core_web_sm")]
-    if subfolders:
-        actual_data_path = os.path.join(path, subfolders[0])
-        return f"{actual_data_path}{sep}en_core_web_sm"
-    
     return f"{path}{sep}en_core_web_sm"
 
 def build_binary():
