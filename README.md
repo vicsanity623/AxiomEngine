@@ -10,7 +10,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-cyan.svg)](https://www.python.org/downloads/)
 [![Release](https://img.shields.io/badge/Release-v0.2.0--voice-magenta.svg)](https://github.com/vicsanity623/AxiomEngine/releases/tag/voice)
 [![Axiom CI](https://github.com/vicsanity623/AxiomEngine/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/vicsanity623/AxiomEngine/actions/workflows/build.yml)
-[![Network](https://img.shields.io/badge/Network-P2P--Live-00f0ff.svg)](https://vics-imac-1.tail137b4f2.ts.net)
+[![pages-build-deployment](https://github.com/vicsanity623/AxiomEngine/actions/workflows/pages/pages-build-deployment/badge.svg?branch=main)](https://github.com/vicsanity623/AxiomEngine/actions/workflows/pages/pages-build-deployment)
 
 **Autonomous. Anonymous. Anti-AI. The deterministic bedrock for shared reality.**
 
