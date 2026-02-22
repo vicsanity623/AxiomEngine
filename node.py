@@ -11,7 +11,7 @@ import os
 import traceback
 import sqlite3
 import logging
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from flask_cors import CORS
@@ -268,13 +268,34 @@ def handle_get_facts_by_id():
     facts_to_return = [f for f in all_facts if f['fact_id'] in requested_ids]
     return jsonify({'facts': facts_to_return})
 
-@app.route('/')
+
+@app.route('/think', methods=['GET'])
+def handle_thinking():
+    query = request.args.get('query', '')
+    if not query:
+        return jsonify({"response": "System standby. Awaiting input."})
+    
+    answer = inference_engine.think(query)
+    return jsonify({"response": answer})
+
+@app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
-def serve_static(path='index.html'):
-    try:
-        return open(path, 'r').read()
-    except:
-        return open('index.html', 'r').read()
+def serve_static_files(path):
+    if path != "" and os.path.exists(os.path.join(app.root_path, path)):
+        return send_from_directory(app.root_path, path)
+    else:
+        # If the user types anything else, serve index.html
+        return send_from_directory(app.root_path, 'index.html')
+
+@app.route('/sys_status', methods=['GET'])
+def handle_sys_status():
+    """Receives UI status updates (like mute state) from the web client."""
+    muted = request.args.get('muted', 'false').lower() == 'true'
+    if muted:
+        logger.info(f"[SYS_INIT] Speech Synthesis: MUTED")
+    else:
+        logger.info(f"[SYS_INIT] Speech Synthesis: ACTIVE")
+    return jsonify({"status": "received"})
 
 if __name__ == "__main__":
     if node_instance is None:
@@ -286,12 +307,3 @@ if __name__ == "__main__":
         node_instance.start_background_tasks()
     logger.info(f"\033[2mAxiom Identity: {node_instance.advertised_url}\033[0m")
     app.run(host='0.0.0.0', port=node_instance.port, debug=False)
-
-@app.route('/think', methods=['GET'])
-def handle_thinking():
-    query = request.args.get('query', '')
-    if not query:
-        return jsonify({"response": "System standby. Awaiting input."})
-    
-    answer = inference_engine.think(query)
-    return jsonify({"response": answer})

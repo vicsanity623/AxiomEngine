@@ -263,6 +263,7 @@
                 <span class="prompt">USER@AXIOM:~$</span>
                 <input type="text" id="queryInput" placeholder="Enter keyword to query the ledger..." autocomplete="off">
                 <button class="exec-btn" onclick="runQuery()">EXECUTE</button>
+                <button id="muteToggle" class="mode-btn" onclick="toggleMute()" style="background:transparent; border:1px solid #00f0ff; color:#00f0ff; padding: 5px 10px; font-size:10px; margin-left: 15px; cursor:pointer;">MUTE [ON]</button>
             </div>
         </div>
 
@@ -312,7 +313,7 @@
         </main>
 
         <footer>
-            <p>AXIOM PROTOCOL // OPEN SOURCE (PPL) // 2025</p>
+            <p>AXIOM PROTOCOL // OPEN SOURCE (PPL) // 2026</p>
             <p>
                 <a href="#">SOURCE</a> | 
                 <a href="#">CHARTER</a> | 
@@ -326,7 +327,63 @@
         const input = document.getElementById('queryInput');
         const output = document.getElementById('output');
         const nodeHeader = document.querySelector('.terminal-header span');
+        const EXECUTE_BTN = document.querySelector('.exec-btn');
 
+        // --- GLOBAL STATE ---
+        let isMuted = false; // Default state: Speaking is ON
+        localStorage.setItem('axiom_muted', isMuted);
+        
+        function speak(text) {
+            const synth = window.speechSynthesis;
+            if (!synth || isMuted) return; // Check Muted state before even starting
+            
+            // If speech is already running, cancel it to prevent overlapping voices
+            synth.cancel(); 
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            // Robot Calibration
+            utterance.pitch = 0.6; 
+            utterance.rate = 0.9;  
+            
+            const voices = synth.getVoices();
+            const robotVoice = voices.find(v => v.name.includes("Daniel") || v.name.includes("Google UK English Male"));
+            if (robotVoice) utterance.voice = robotVoice;
+
+            synth.speak(utterance);
+        }
+        
+        function toggleMute() {
+            isMuted = !isMuted;
+            localStorage.setItem('axiom_muted', isMuted);
+            updateMuteButtonDisplay();
+            
+            // Send status update back to the Node (Optional, but good for logging)
+            // We use the currently active node URL for this communication
+            const nodeUrl = localStorage.getItem("axiom_node_url") || "http://127.0.0.1:8009";
+            fetch(`${nodeUrl}/sys_status?muted=${isMuted}`); // Assuming you might add this route later, otherwise safe to ignore.
+
+            log(`[SYS_INIT] Speech Synthesis: ${isMuted ? 'MUTED' : 'ACTIVE'}`, 'log-dim');
+            
+            // If muting, immediately cancel any currently speaking audio
+            if (isMuted && window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+        }
+
+        function updateMuteButtonDisplay() {
+            const btn = document.getElementById('muteToggle');
+            if (!btn) return;
+            if (isMuted) {
+                btn.innerText = "MUTE [OFF]";
+                btn.style.color = "#ff0055"; // Pink when muted
+            } else {
+                btn.innerText = "MUTE [ON]";
+                btn.style.color = "#00f0ff"; // Cyan when active
+            }
+        }
+        
+        // --- CORE LOGIC ---
         input.addEventListener("keypress", function(event) {
             if (event.key === "Enter") {
                 runQuery();
@@ -340,18 +397,6 @@
             div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${colorClass}">${msg}</span>`;
             output.appendChild(div);
             output.scrollTop = output.scrollHeight;
-        }
-        
-        // --- NEW: SPEECH SYNTHESIS (THE MOUTH) ---
-        function speak(text) {
-            const synth = window.speechSynthesis;
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.pitch = 0.6; 
-            utterance.rate = 0.9;  
-            const voices = synth.getVoices();
-            const robotVoice = voices.find(v => v.name.includes("Daniel") || v.name.includes("Google UK English Male"));
-            if (robotVoice) utterance.voice = robotVoice;
-            synth.speak(utterance);
         }
 
         async function runQuery() {
@@ -390,9 +435,8 @@
         
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 4000); 
+                const timeoutId = setTimeout(() => controller.abort(), 4000);
         
-                // --- CORE CHANGE: Query the NEW /think endpoint ---
                 const response = await fetch(`${activeNode}/think?query=${encodeURIComponent(term)}`);
                 clearTimeout(timeoutId);
         
@@ -400,31 +444,30 @@
                 
                 if (data.response) {
                     log(`AXIOM >> ${data.response}`, 'log-green');
-                    speak(data.response); // Activate the mouth!
+                    speak(data.response); // ACTIVATE THE MOUTH!
                 } else {
                     log(`QUERY FAILED: No structured response from Node.`, 'log-red');
                 }
         
             } catch (error) {
-                log(`WARN: NODE [${activeNode}] UNREACHABLE.`, "log-red");
+                if (window.location.protocol === 'https:' && activeNode.startsWith('http://')) {
+                    log("CRITICAL: Browser blocked insecure link (Mixed Content).", "log-red");
+                    log("FIX: Type 'connect https://<your-tailscale-url>'", "log-cyan");
+                } else {
+                    log(`WARN: NODE [${activeNode}] UNREACHABLE.`, "log-red");
+                    log("HINT: Ensure 'tailscale funnel 8009' is running on iMac.", "log-dim");
+                }
                 
                 setTimeout(() => {
                     log("Simulation: Scanning Distributed Hash Table...", "log-cyan");
                 }, 800);
-        
-                setTimeout(() => {
-                    log(`Simulation: Found 2 demo records for "${term}"`, "log-green");
-                    log(`> [TRUSTED] The entity '${term}' was identified in 42 secure contexts.`, "log-green");
-                    log(`> [UNCORROBORATED] Recent activity detected via RSS streams regarding '${term}'.`, "log-pink");
-                    log("NOTE: TYPE 'connect <url>' TO LINK A LIVE NODE.", "log-red");
-                }, 1500);
             }
         
             input.disabled = false;
             input.focus();
         }
         
-        // (Keep the window.onload logic for remembering the node URL)
+        // --- NEW: INITIALIZE MUTE STATE & UI ---
         window.onload = () => {
             const savedNode = localStorage.getItem("axiom_node_url");
             if (savedNode) {
@@ -432,6 +475,11 @@
                 document.querySelector('.terminal-header span').innerHTML = 
                     `<span class="status-light"></span>CONNECTED: ${displayUrl}`;
             }
+            
+            // Load Mute State from localStorage or default to false (ON)
+            isMuted = localStorage.getItem('axiom_muted') === 'true';
+            updateMuteButtonDisplay();
+            log(`[SYS_INIT] Speech Synthesis: ${isMuted ? 'MUTED' : 'ACTIVE'}`, 'log-dim');
         };
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
