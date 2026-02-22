@@ -1,4 +1,4 @@
-const CACHE_NAME = 'axiom-terminal-v0.0.2';
+const CACHE_NAME = 'axiom-terminal-v0.2.0';
 const ASSETS = [
   './',
   './index.html',

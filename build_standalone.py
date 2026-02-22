@@ -1,13 +1,5 @@
-#!/usr/bin/env python3
-"""
-Axiom Engine - Build System V0.1.0 (Hardened for Python 3.13)
-Generates standalone executables and professional macOS DMG installers.
-
-FEATURES:
-- Drag-to-Applications: Professional macOS installation.
-- Web UI Bundling: Includes index.html for mobile/web terminal access.
-- Hardened for Python 3.13: Fixes lxml segfaults.
-"""
+# Axiom - build_standalone.py
+# Copyright (C) 2026 The Axiom Contributors
 
 import os
 import sys
@@ -28,7 +20,7 @@ def check_requirements():
 
     if platform.system() == "Darwin":
         if shutil.which("create-dmg") is None:
-            print("Warning: 'create-dmg' not found. DMG will be missing Application shortcut.")
+            print("Warning: 'create-dmg' not found. DMG shortcut will be skipped.")
             print("Fix: brew install create-dmg")
 
 def get_spacy_data():
@@ -47,7 +39,6 @@ def get_spacy_data():
 def build_binary():
     print(f"--- [2/5] Compiling Binary (Python {platform.python_version()}) ---")
     
-    # Separator for --add-data
     sep = ";" if os.name == "nt" else ":"
 
     cmd = [
@@ -57,16 +48,11 @@ def build_binary():
         "--onefile",
         "--clean",
         "--noconfirm",
-        # 1. Bundle SpaCy AI Model
         "--add-data", get_spacy_data(),
-        # 2. Bundle Web Interface (Critical for node.py @app.route('/'))
-        "--add-data", f"index.html{sep}.",
-        
-        # Manually specify hidden imports to avoid the crashing crawler
         "--hidden-import", "spacy",
         "--hidden-import", "en_core_web_sm",
         "--hidden-import", "flask",
-        "--hidden-import", "flask_cors", # NEW
+        "--hidden-import", "flask_cors",
         "--hidden-import", "requests",
         "--hidden-import", "feedparser",
         "--hidden-import", "trafilatura",
@@ -74,8 +60,6 @@ def build_binary():
         "--hidden-import", "networkx",
         "--hidden-import", "pyvis",
         "--hidden-import", "sqlite3",
-        
-        # Exclude heavy but unused modules
         "--exclude-module", "tkinter", 
         "--exclude-module", "matplotlib"
     ]
@@ -86,34 +70,31 @@ def build_binary():
         sys.exit(result.returncode)
 
 def create_dmg():
-    """Creates a professional DMG with 'Drag to Applications' shortcut."""
+    """Creates a professional DMG for macOS."""
     if platform.system() != "Darwin" or shutil.which("create-dmg") is None:
         return
 
     print("--- [3/5] Packaging Professional DMG for macOS ---")
     arch = platform.machine()
-    dmg_name = f"Axiom_Node_v0.1.0_{arch}.dmg"
+    dmg_name = f"Axiom_Node_v0.2.0_{arch}.dmg"
     dist_dir = os.path.join(os.getcwd(), "dist")
     binary_path = os.path.join(dist_dir, APP_NAME)
     dmg_path = os.path.join(dist_dir, dmg_name)
 
-    if os.path.exists(dmg_path):
-        os.remove(dmg_path)
+    if os.path.exists(dmg_path): os.remove(dmg_path)
 
-    # Temporary staging folder
     staging = os.path.join(dist_dir, "staging")
     if os.path.exists(staging): shutil.rmtree(staging)
     os.makedirs(staging)
     shutil.copy(binary_path, staging)
 
-    # DMG Command with Application Shortcut
     cmd = [
         "create-dmg",
         "--volname", f"Axiom Node Installer",
         "--window-size", "600", "400",
         "--icon-size", "100",
         "--icon", APP_NAME, "150", "190",
-        "--app-drop-link", "450", "190", # THE DRAG-TO-APPLICATIONS MAGIC
+        "--app-drop-link", "450", "190",
         "--hide-extension", APP_NAME,
         dmg_path,
         staging
@@ -121,18 +102,41 @@ def create_dmg():
     
     subprocess.run(cmd)
     shutil.rmtree(staging)
-    print(f"\033[92mSUCCESS: Installer created at dist/{dmg_name}\033[0m")
+    print(f"\033[92mSUCCESS: macOS Installer created at dist/{dmg_name}\033[0m")
+
+def create_win_exe_shortcut():
+    """Placeholder for creating a Windows-friendly shortcut/installer if needed."""
+    if platform.system() == "Windows":
+        print("--- [3/5] Windows packaging steps skipped (Inno Setup required for full EXE installer). ---")
+    else:
+        print("--- [3/5] Platform check: Not macOS, skipping DMG creation. ---")
+
 
 def cleanup():
     print("--- [4/5] Cleaning Build Artifacts ---")
-    for folder in ["build"]:
-        if os.path.exists(folder): shutil.rmtree(folder)
+    if os.path.exists("build"): shutil.rmtree("build")
     spec_file = f"{APP_NAME}.spec"
     if os.path.exists(spec_file): os.remove(spec_file)
 
-if __name__ == "__main__":
+def main():
     check_requirements()
     build_binary()
-    create_dmg()
+    
+    if platform.system() == "Darwin":
+        create_dmg()
+    elif platform.system() == "Windows":
+        create_win_exe_shortcut()
+        
     cleanup()
     print("\n\033[96m[5/5] AXIOM BUILD COMPLETE\033[0m\n")
+    
+    exe_path = f"./dist/{APP_NAME}"
+    if platform.system() == "Windows":
+        exe_path += ".exe"
+    
+    print(f"To run the standalone node:")
+    print(f"   cd dist/")
+    print(f"   .{os.path.sep}{APP_NAME}")
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,5 @@
 # Axiom - ledger.py
-# Copyright (C) 2025 The Axiom Contributors
+# Copyright (C) 2026 The Axiom Contributors
 
 import sqlite3
 import logging
@@ -13,6 +13,7 @@ DB_NAME = "axiom_ledger.db"
 REQUIRED_CORROBORATING_DOMAINS = 3
 
 def _domain_from_url(url):
+    """Extracts the base domain (e.g., 'bbc.com') to prevent gaming the system with multiple links from one site."""
     try:
         parsed = urlparse(url)
         domain = parsed.netloc
@@ -23,6 +24,9 @@ def _domain_from_url(url):
         return "unknown"
 
 def initialize_database():
+    """
+    Creates the 'facts' table and the 'fact_relationships' table if they don't exist.
+    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     logger.info("[Ledger] Initializing and verifying database schema...")
@@ -69,9 +73,15 @@ def initialize_database():
         )
     """)
 
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lexicon_word ON lexicon(word)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_synapse_a ON synapses(word_a)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_synapse_b ON synapses(word_b)")
+    
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_facts_processed ON facts(lexically_processed)")
+
     conn.commit()
     conn.close()
-    logger.info("Starting... Database schema is up-to-date. Ledger Synced.")
+    logger.info("\033[92m[Ledger] Database schema is up-to-date.\033[0m")
 
 def get_all_facts_for_analysis():
     conn = sqlite3.connect(DB_NAME)
@@ -99,6 +109,9 @@ def insert_uncorroborated_fact(fact_id, fact_content, source_url):
         return {"fact_id": fact_id, "fact_content": fact_content, "source_url": source_url}
     except sqlite3.IntegrityError:
         return None
+    except Exception as e:
+        logger.error(f"[Ledger] Insert Error: {e}")
+        return None
     finally:
         conn.close()
 
@@ -116,10 +129,10 @@ def update_fact_corroboration(fact_id, new_source_url):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT source_url, corroborating_sources FROM facts WHERE fact_id = ?", (fact_id,))
+        cursor.execute("SELECT source_url, corroborating_sources, trust_score FROM facts WHERE fact_id = ?", (fact_id,))
         row = cursor.fetchone()
         if not row: return
-        original_url, existing_sources_str = row
+        original_url, existing_sources_str, current_score = row
         domains = {_domain_from_url(original_url)}
         if existing_sources_str:
             for s in existing_sources_str.split(','):
@@ -163,7 +176,6 @@ def insert_relationship(fact_id_1, fact_id_2, weight):
         conn.close()
 
 def get_unprocessed_facts_for_lexicon():
-    """Fetches facts that the brain hasn't learned from yet."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -173,7 +185,6 @@ def get_unprocessed_facts_for_lexicon():
     return rows
 
 def mark_fact_as_processed(fact_id):
-    """Signals that a fact has been integrated into the Lexical Mesh."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("UPDATE facts SET lexically_processed = 1 WHERE fact_id = ?", (fact_id,))
@@ -181,7 +192,6 @@ def mark_fact_as_processed(fact_id):
     conn.close()
 
 def update_lexical_atom(word, pos):
-    """Adds a word to the lexicon or increments its weight."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("""
@@ -193,7 +203,6 @@ def update_lexical_atom(word, pos):
     conn.close()
 
 def update_synapse(word_a, word_b, relation):
-    """Strengthens the neural association between two concepts."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     w1, w2 = (word_a, word_b) if word_a < word_b else (word_b, word_a)

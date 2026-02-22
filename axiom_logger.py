@@ -34,10 +34,10 @@ class AxiomFormatter(logging.Formatter):
         elif "uncorroborated" in lower_msg:
             color = MAGENTA
             icon = "?"
-        elif "new fact" in lower_msg or "success" in lower_msg or "created" in lower_msg:
+        elif "new fact" in lower_msg or "success" in lower_msg or "created" in lower_msg or "identified" in lower_msg:
             color = CYAN
             icon = "✓"
-        elif "initializing" in lower_msg or "starting" in lower_msg:
+        elif "initializing" in lower_msg or "starting" in lower_msg or "Waiting" in lower_msg:
             color = YELLOW
             icon = "⟳"
         else:

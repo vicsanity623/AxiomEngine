@@ -1,5 +1,5 @@
 # Axiom - synthesizer.py
-# Copyright (C) 2025 The Axiom Contributors
+# Copyright (C) 2026 The Axiom Contributors
 
 import spacy
 import logging

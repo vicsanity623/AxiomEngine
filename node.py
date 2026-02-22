@@ -1,5 +1,5 @@
 # Axiom - node.py
-# Copyright (C) 2025 The Axiom Contributors
+# Copyright (C) 2026 The Axiom Contributors
 
 import time
 import threading
@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from flask_cors import CORS
 
 # --- IMPORT AXIOM MODULES ---
+import inference_engine
 import zeitgeist_engine
 import universal_extractor
 import crucible
@@ -71,7 +72,6 @@ class AxiomNode:
         self.port = port
         self.self_url = f"http://{self.host}:{port}"
         
-        # Identity Logic
         if port == 8009:
             self.advertised_url = os.environ.get("ADVERTISED_URL") or "https://vics-imac-1.tail137b4f2.ts.net"
         else:
@@ -113,7 +113,7 @@ class AxiomNode:
         self._last_mesh_print = now
         print("")
         if not self.peers:
-            logger.info("\033[90m[Mesh] Waiting for incoming connections...\033[0m")
+            logger.info("[Mesh] Waiting for incoming connections...")
         else:
             logger.info("\033[96m◈ Active Knowledge Mesh ◈\033[0m")
             sorted_peers = sorted(self.peers.items(), key=lambda item: item[1]['reputation'], reverse=True)
@@ -128,7 +128,6 @@ class AxiomNode:
         if not peer_url: return
         peer_url = peer_url.strip().rstrip("/")
         
-        # 1. ME CHECK
         if peer_url == self.advertised_url or peer_url == self.self_url:
             return
 
@@ -137,12 +136,10 @@ class AxiomNode:
             if self.port != 8009:
                 peer_url = "http://127.0.0.1:8009"
 
-        # 3. DEDUPLICATE
         if peer_url in self.peers:
              self.peers[peer_url]['last_seen'] = datetime.now(timezone.utc).isoformat()
              return
 
-        # 4. REGISTER
         self.peers[peer_url] = {
             "reputation": 0.5, 
             "first_seen": datetime.now(timezone.utc).isoformat(),
@@ -188,7 +185,7 @@ class AxiomNode:
         if not unprocessed_facts:
             logger.info("Success: Lexical Mesh is up to date.")
             return
-        logger.info(f"\033[96m[Reflection] Shredding {len(unprocessed_facts)} facts into semantic synapses...\033[0m")
+        logger.info(f"[Reflection]Success. Shredding {len(unprocessed_facts)} facts into semantic synapses...")
         for fact in unprocessed_facts:
             try:
                 if crucible.integrate_fact_to_mesh(fact['fact_content']):
@@ -228,8 +225,6 @@ class AxiomNode:
     def start_background_tasks(self):
         background_thread = threading.Thread(target=self._background_loop, daemon=True)
         background_thread.start()
-
-# --- API ROUTES ---
 
 def _register_sync_caller():
     caller_url = (request.headers.get("X-Axiom-Peer") or "").strip().rstrip("/")
@@ -291,3 +286,12 @@ if __name__ == "__main__":
         node_instance.start_background_tasks()
     logger.info(f"\033[2mAxiom Identity: {node_instance.advertised_url}\033[0m")
     app.run(host='0.0.0.0', port=node_instance.port, debug=False)
+
+@app.route('/think', methods=['GET'])
+def handle_thinking():
+    query = request.args.get('query', '')
+    if not query:
+        return jsonify({"response": "System standby. Awaiting input."})
+    
+    answer = inference_engine.think(query)
+    return jsonify({"response": answer})

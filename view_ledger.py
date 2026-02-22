@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # Axiom - view_ledger.py
+# Copyright (C) 2026 The Axiom Contributors
+
 
 import sqlite3
 import sys
@@ -7,12 +9,11 @@ import argparse
 
 DB_NAME = "axiom_ledger.db"
 
-# ANSI Colors
 CYAN = "\033[96m"
 GREEN = "\033[92m"
 RED = "\033[91m"
-GRAY = "\033[90m"
 PINK = "\033[95m"
+GRAY = "\033[90m"
 RESET = "\033[0m"
 
 def print_header(text):
@@ -23,19 +24,16 @@ def print_stats():
     cur = conn.cursor()
     
     try:
-        # 1. Fact Stats
         cur.execute("SELECT status, COUNT(*) FROM facts GROUP BY status")
         stats = cur.fetchall()
         cur.execute("SELECT COUNT(*) FROM facts")
         total_facts = cur.fetchone()[0]
         
-        # 2. Relationship Stats
         try:
             cur.execute("SELECT COUNT(*) FROM fact_relationships")
             rels = cur.fetchone()[0]
         except: rels = 0
 
-        # 3. Brain Stats (Lexical Mesh)
         try:
             cur.execute("SELECT COUNT(*) FROM lexicon")
             atoms = cur.fetchone()[0]
@@ -60,7 +58,6 @@ def print_stats():
         conn.close()
 
 def print_brain(limit=15):
-    """NEW: Displays the strongest associations in Axiom's brain."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -96,17 +93,25 @@ def print_facts(limit=20):
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     
-    print_header(f"RECENT FACTS (Limit: {limit})")
+    print_header(f"RECENT RECORDS (Limit: {limit})")
     
     cur.execute("SELECT * FROM facts ORDER BY ingest_timestamp_utc DESC LIMIT ?", (limit,))
     rows = cur.fetchall()
     
     for row in rows:
-        color = GREEN if row['status'] == 'trusted' else (RED if row['status'] == 'disputed' else GRAY)
-        processed = f"{PINK}◈{RESET}" if row.get('lexically_processed') else f"{GRAY}◇{RESET}"
-        print(f"{color}[{row['status'].upper()}] {processed} Trust: {row['trust_score']}{RESET}")
-        print(f"   {row['fact_content']}")
-        print(f"   {GRAY}Source: {row['source_url']}{RESET}")
+        r = dict(row)
+        
+        status = r['status']
+        color = GREEN if status == 'trusted' else (RED if status == 'disputed' else GRAY)
+        
+        processed = f"{PINK}◈{RESET}" if r.get('lexically_processed') else f"{GRAY}◇{RESET}"
+        
+        word_count = len(r['fact_content'].split())
+        integrity = f"{GREEN}COMPLETE{RESET}" if word_count > 8 else f"{PINK}FRAGMENT?{RESET}" # Use Pink for warning
+
+        print(f"{color}[{status.upper()}] {processed} Trust: {r['trust_score']} | Words: {word_count} | {integrity}{RESET}")
+        print(f"   {r['fact_content']}")
+        print(f"   {GRAY}Source: {r['source_url']}{RESET}")
         print("")
 
     conn.close()

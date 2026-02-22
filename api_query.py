@@ -1,5 +1,5 @@
 # Axiom - api_query.py
-# Copyright (C) 2025 The Axiom Contributors
+# Copyright (C) 2026 The Axiom Contributors
 
 import sqlite3
 import logging
