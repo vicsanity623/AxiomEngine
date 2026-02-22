@@ -21,11 +21,12 @@ jobs:
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
-        # Install build tools needed only for CI visualization
         pip install pyinstaller pyvis networkx
-    
+        
+    - name: Download SpaCy Model (CRITICAL FIX)
+      run: python -m spacy download en_core_web_sm # <-- ADD THIS LINE
+        
     - name: Verify Lexical Mesh Integrity (Test)
-      # Run the system check to ensure the Lexicon/Synapse tables can be built
       run: |
         python view_ledger.py --stats
         
