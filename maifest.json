@@ -1,0 +1,17 @@
+{
+    "name": "Axiom Grounding Engine",
+    "short_name": "Axiom",
+    "description": "Decentralized Terminal for Verifiable Truth",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#050505",
+    "theme_color": "#00f0ff",
+    "icons": [
+      {
+        "src": "https://raw.githubusercontent.com/vicsanity623/AxiomEngine/main/main/Axiom.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "any maskable"
+      }
+    ]
+  }

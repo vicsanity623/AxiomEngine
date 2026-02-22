@@ -15,12 +15,14 @@ from flask import Flask, jsonify, request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from flask_cors import CORS
+
+# --- IMPORT AXIOM MODULES ---
 import zeitgeist_engine
 import universal_extractor
 import crucible
 import synthesizer
 from ledger import initialize_database, get_unprocessed_facts_for_lexicon, mark_fact_as_processed
-from api_query import search_ledger_for_api
+from api_query import search_ledger_for_api, query_lexical_mesh
 from p2p import sync_with_peer
 from graph_export import to_json_for_viz
 from axiom_logger import setup_logger
@@ -47,7 +49,7 @@ def print_banner():
   ██║  ██║██╔╝ ██╗██║╚██████╔╝██║ ╚═╝ ██║       ███████╗██║ ╚████║╚██████╔╝██║██║ ╚████║███████╗
   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝     ╚═╝       ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝╚══════╝
 
-                                  ◈ AXIOM-ENGINE v3.2 ◈
+                                  ◈ AXIOM-ENGINE v3.3 ◈
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
 """)
     print(r)
@@ -70,38 +72,23 @@ class AxiomNode:
         self.port = port
         self.self_url = f"http://{self.host}:{port}"
         
-        # If this is the main node (8009), use the Funnel. 
-        # If it's a peer on another port, use its local address so they don't collide.
+        # Identity Logic
         if port == 8009:
             self.advertised_url = os.environ.get("ADVERTISED_URL") or "https://vics-imac-1.tail137b4f2.ts.net"
         else:
             self.advertised_url = f"http://127.0.0.1:{port}"
             
-        self.peers = {}
-        seed_nodes = [
-            "https://vics-imac-1.tail137b4f2.ts.net",
-            # "https://axiom-seed-london.ts.net", # Future Community Seeds
-            # "https://axiom-seed-tokyo.ts.net"
-        ]
-
-        for seed in seed_nodes:
-            if seed != self.advertised_url:
-                self.peers[seed] = {"reputation": 0.5, "first_seen": datetime.now(timezone.utc).isoformat(), "last_seen": datetime.now(timezone.utc).isoformat()}
-
-        peer_url = _normalize_bootstrap_peer(bootstrap_peer, port)
-        if peer_url and peer_url != self.advertised_url:
-            self.peers[peer_url] = {"reputation": 0.5, "first_seen": datetime.now(timezone.utc).isoformat(), "last_seen": datetime.now(timezone.utc).isoformat()} 
+        self.peers = {} 
         self._topic_rotation_index = random.randint(0, 10) 
+        self._last_mesh_print = 0 
         
+        seed_nodes = ["https://vics-imac-1.tail137b4f2.ts.net"]
+        for seed in seed_nodes:
+            self.add_or_update_peer(seed)
+
         peer_url = _normalize_bootstrap_peer(bootstrap_peer, port)
         if peer_url:
-            if peer_url != self.advertised_url:
-                self.peers[peer_url] = {
-                    "reputation": 0.5, 
-                    "first_seen": datetime.now(timezone.utc).isoformat(), 
-                    "last_seen": datetime.now(timezone.utc).isoformat()
-                }
-                logger.info(f"\033[93mBootstrap peer registered: {peer_url}\033[0m")
+            self.add_or_update_peer(peer_url)
         
         self.investigation_queue = [] 
         self.active_proposals = {}
@@ -114,19 +101,17 @@ class AxiomNode:
         if not self.peers:
             logger.info("\033[92mNo bootstrap peers defined. Starting as Genesis Node.\033[0m")
             return
-
         logger.info("\033[93m[Init] Performing initial sync with bootstrap peers...\033[0m")
         for peer_url in list(self.peers.keys()):
             try:
                 sync_status, new_facts = sync_with_peer(self, peer_url)
                 self._update_reputation(peer_url, sync_status, len(new_facts))
-                if sync_status == 'SUCCESS_NEW_FACTS':
-                    logger.info(f"[Init] Initial sync complete. Acquired {len(new_facts)} facts.")
-            except Exception as e:
-                logger.error(f"[Init] Failed to bootstrap from {peer_url}: {e}")
+            except: pass
 
     def print_mesh_status(self):
-        """NEW: Dedicated function to show the current network health."""
+        now = time.time()
+        if now - self._last_mesh_print < 5: return
+        self._last_mesh_print = now
         print("")
         if not self.peers:
             logger.info("\033[90m[Mesh] Waiting for incoming connections...\033[0m")
@@ -141,46 +126,40 @@ class AxiomNode:
         print("-" * 60)
 
     def add_or_update_peer(self, peer_url):
-        """Universal Discovery: Deduplicates local vs public identities."""
-        if not peer_url:
-            return
-            
+        if not peer_url: return
         peer_url = peer_url.strip().rstrip("/")
         
-        my_identities = [
-            self.advertised_url,
-            self.self_url,
-            "http://127.0.0.1:8009",
-            "https://vics-imac-1.tail137b4f2.ts.net"
-        ]
-        
-        if peer_url in my_identities:
+        # 1. ME CHECK
+        if peer_url == self.advertised_url or peer_url == self.self_url:
             return
 
-        if "127.0.0.1" in peer_url and "8009" in peer_url:
-             if "https://vics-imac-1.tail137b4f2.ts.net" in self.peers:
-                 return
+        bootstrap_aliases = ["8009", "tail137b4f2.ts.net"]
+        if any(alias in peer_url for alias in bootstrap_aliases):
+            if self.port != 8009:
+                peer_url = "http://127.0.0.1:8009"
 
-        if peer_url not in self.peers:
-            self.peers[peer_url] = {
-                "reputation": 0.1,
-                "first_seen": datetime.now(timezone.utc).isoformat(),
-                "last_seen": datetime.now(timezone.utc).isoformat()
-            }
-            logger.info(f"\033[92m[Mesh] New node identified: {peer_url}\033[0m")
-            
-            def immediate_handshake():
-                time.sleep(3) 
-                try:
-                    sync_status, new_facts = sync_with_peer(self, peer_url)
-                    self._update_reputation(peer_url, sync_status, len(new_facts))
-                    logger.info(f"\033[92m[Mesh] Handshake verified with {peer_url}.\033[0m")
-                    self.print_mesh_status() 
-                except: pass
-            
-            threading.Thread(target=immediate_handshake, daemon=True).start()
-        else:
+        # 3. DEDUPLICATE
+        if peer_url in self.peers:
              self.peers[peer_url]['last_seen'] = datetime.now(timezone.utc).isoformat()
+             return
+
+        # 4. REGISTER
+        self.peers[peer_url] = {
+            "reputation": 0.5, 
+            "first_seen": datetime.now(timezone.utc).isoformat(),
+            "last_seen": datetime.now(timezone.utc).isoformat()
+        }
+        logger.info(f"\033[92m[Mesh] New node identified: {peer_url}\033[0m")
+        
+        def immediate_handshake():
+            time.sleep(2)
+            try:
+                sync_status, new_facts = sync_with_peer(self, peer_url)
+                self._update_reputation(peer_url, sync_status, len(new_facts))
+                self.print_mesh_status() 
+            except: pass
+        
+        threading.Thread(target=immediate_handshake, daemon=True).start()
 
     def _update_reputation(self, peer_url, sync_status, new_facts_count):
         if peer_url not in self.peers: return
@@ -205,20 +184,18 @@ class AxiomNode:
         except: return []
 
     def _reflection_cycle(self):
-        logger.info("[Reflection] Starting Lexical Mesh integration... ---")
+        logger.info("\033[95m[Reflection] Starting Lexical Mesh integration... ---\033[0m")
         unprocessed_facts = get_unprocessed_facts_for_lexicon()
         if not unprocessed_facts:
-            logger.info("[Reflection Created] Lexical Mesh is up to date.")
+            logger.info("Success: Lexical Mesh is up to date.")
             return
         logger.info(f"\033[96m[Reflection] Shredding {len(unprocessed_facts)} facts into semantic synapses...\033[0m")
         for fact in unprocessed_facts:
             try:
-                success = crucible.integrate_fact_to_mesh(fact['fact_content'])
-                if success:
+                if crucible.integrate_fact_to_mesh(fact['fact_content']):
                     mark_fact_as_processed(fact['fact_id'])
-            except Exception as e:
-                logger.error(f"[Reflection] Error shredding fact: {e}")
-        logger.info("[Reflection Success] Neural pathways strengthened. Idle cycle complete.")
+            except: pass
+        logger.info("Success: Neural pathways strengthened. Idle cycle complete.")
 
     def _background_loop(self):
         logger.info("Starting continuous background cycle.")
@@ -237,38 +214,25 @@ class AxiomNode:
                         if new_facts: newly_created_facts.extend(new_facts)
                     if newly_created_facts: synthesizer.link_related_facts(newly_created_facts)
             except Exception as e:
-                logger.error(f"CRITICAL ERROR IN LEARNING LOOP: {e}")
+                logger.error(f"Error: {e}")
 
             logger.info(f"\033[2m[AXIOM ENGINE CYCLE FINISH]\033[0m")
-            
             for peer_url in list(self.peers.keys()):
                 try:
                     sync_status, new_facts = sync_with_peer(self, peer_url)
                     self._update_reputation(peer_url, sync_status, len(new_facts))
                 except: pass
-
             self._reflection_cycle()
-
-            print("")
-            if not self.peers: 
-                logger.info("\033[93m[Status] Node is currently isolated. Scanning for entry points...\033[0m")
-            else:
-                logger.info("\033[96m◈ Active Knowledge Mesh ◈\033[0m")
-                sorted_peers = sorted(self.peers.items(), key=lambda item: item[1]['reputation'], reverse=True)
-                for peer, data in sorted_peers:
-                    rep = data['reputation']
-                    status_label = "TRUSTED" if rep > 0.7 else ("ACTIVE" if rep > 0.1 else "IDENTIFIED")
-                    color = "\033[92m" if rep > 0.7 else ("\033[93m" if rep > 0.1 else "\033[90m")
-                    logger.info(f"  {color}- {peer.ljust(45)} : {rep:.4f} [{status_label}]\033[0m")
-            print("-" * 60)
+            self.print_mesh_status()
             time.sleep(900)
 
     def start_background_tasks(self):
         background_thread = threading.Thread(target=self._background_loop, daemon=True)
         background_thread.start()
 
+# --- API ROUTES ---
+
 def _register_sync_caller():
-    """Universal Discovery: If someone calls our API, we add them to our peer list."""
     caller_url = (request.headers.get("X-Axiom-Peer") or "").strip().rstrip("/")
     if caller_url:
         node_instance.add_or_update_peer(caller_url)
@@ -280,6 +244,12 @@ def handle_local_query():
     include_uncorroborated = request.args.get('include_uncorroborated', 'false').lower() == 'true'
     results = node_instance.search_ledger_for_api(search_term, include_uncorroborated=include_uncorroborated)
     return jsonify({"results": results})
+
+@app.route('/mesh_query', methods=['GET'])
+def handle_mesh_query():
+    search_term = request.args.get('term', '')
+    data = query_lexical_mesh(search_term)
+    return jsonify(data)
 
 @app.route('/get_peers', methods=['GET'])
 def handle_get_peers():
@@ -317,10 +287,8 @@ if __name__ == "__main__":
         print_banner()
         port_val = int(os.environ.get("PORT", 8009))
         bootstrap_val = os.environ.get("BOOTSTRAP_PEER")
-        
         node_instance = AxiomNode(port=port_val, bootstrap_peer=bootstrap_val)
         node_instance.bootstrap_sync()
         node_instance.start_background_tasks()
-
     logger.info(f"\033[2mAxiom Identity: {node_instance.advertised_url}\033[0m")
     app.run(host='0.0.0.0', port=node_instance.port, debug=False)
