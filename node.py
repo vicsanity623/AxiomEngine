@@ -275,12 +275,12 @@ def handle_get_facts_by_id():
     return jsonify({'facts': facts_to_return})
 
 @app.route('/')
-def serve_index():
+@app.route('/<path:path>')
+def serve_static(path='index.html'):
     try:
-        with open('index.html', 'r') as f:
-            return f.read()
+        return open(path, 'r').read()
     except:
-        return "index.html not found.", 404
+        return open('index.html', 'r').read()
 
 if __name__ == "__main__":
     if node_instance is None:
