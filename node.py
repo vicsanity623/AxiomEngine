@@ -32,8 +32,7 @@ setup_logger()
 logger = logging.getLogger("node")
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
-
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
 node_instance = None
 
 def print_banner():
