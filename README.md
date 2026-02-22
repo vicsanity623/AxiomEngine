@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/vicsanity623/AxiomEngine/main/main/Axiom_logo.PNG" width="750" alt="Axiom Logo">
+<img src="https://raw.githubusercontent.com/vicsanity623/AxiomEngine/main/main/Axiom.png" width="750" alt="Axiom Logo">
 
 <br />
 
