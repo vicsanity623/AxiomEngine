@@ -16,7 +16,6 @@
             --font-main: 'Courier New', Courier, monospace;
         }
 
-        /* --- GLOBAL CYBERPUNK STYLES --- */
         body {
             background-color: var(--bg-color);
             color: var(--text-color);
@@ -30,7 +29,6 @@
             background-size: 100% 2px, 3px 100%;
         }
 
-        /* Scanline Overlay */
         body::before {
             content: " ";
             display: block;
@@ -53,7 +51,6 @@
             z-index: 1;
         }
 
-        /* --- HEADER --- */
         header {
             text-align: center;
             padding: 3rem 0;
@@ -80,7 +77,6 @@
             letter-spacing: 2px;
         }
 
-        /* --- THE TERMINAL (SEARCH INTERFACE) --- */
         .terminal-wrapper {
             background-color: var(--term-bg);
             border: 1px solid var(--neon-cyan);
@@ -166,7 +162,6 @@
             box-shadow: 0 0 10px var(--neon-cyan);
         }
 
-        /* --- CONTENT CARDS --- */
         section {
             padding: 2rem 0;
             border-bottom: 1px solid #222;
@@ -198,7 +193,6 @@
             color: #fff;
         }
 
-        /* --- BUTTONS & GRIDS --- */
         .btn {
             display: inline-block;
             border: 1px solid var(--neon-cyan);
@@ -235,7 +229,6 @@
         footer a { color: var(--dim-color); text-decoration: none; }
         footer a:hover { color: var(--neon-cyan); }
 
-        /* Scrollbar styling */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #000; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
@@ -252,7 +245,6 @@
             <p>Decentralized Knowledge Ledger // v3.0</p>
         </header>
 
-        <!-- LIVE TERMINAL INTERFACE -->
         <div class="terminal-wrapper">
             <div class="terminal-header">
                 <span><span class="status-light"></span>CONNECTED: LOCAL_HOST::8009</span>
@@ -270,7 +262,6 @@
         </div>
 
         <main>
-            <!-- Mission -->
             <section id="mission">
                 <h2>// MISSION_STATEMENT</h2>
                 <div class="card">
@@ -281,7 +272,6 @@
                 </div>
             </section>
 
-            <!-- Download -->
             <section id="download">
                 <h2>// CLIENT_ACCESS</h2>
                 <div class="card">
@@ -295,7 +285,6 @@
                 </div>
             </section>
 
-            <!-- Nodes -->
             <section id="run-a-node">
                 <h2>// OPERATOR_MODE</h2>
                 <div class="card">
@@ -305,7 +294,6 @@
                 </div>
             </section>
 
-            <!-- Community -->
             <section id="community">
                 <h2>// HIVE_MIND</h2>
                 <div class="card">
@@ -329,12 +317,10 @@
 
     </div>
 
-    <!-- SCRIPT TO HANDLE THE FAKE/REAL SEARCH -->
     <script>
         const input = document.getElementById('queryInput');
         const output = document.getElementById('output');
 
-        // Allow "Enter" key
         input.addEventListener("keypress", function(event) {
             if (event.key === "Enter") {
                 runQuery();
@@ -347,7 +333,7 @@
             div.className = 'log-entry';
             div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${colorClass}">${msg}</span>`;
             output.appendChild(div);
-            output.scrollTop = output.scrollHeight; // Auto scroll
+            output.scrollTop = output.scrollHeight;
         }
 
         async function runQuery() {
@@ -356,11 +342,10 @@
         
             // If you type: connect https://your-tailscale-url.ts.net
             if (term.startsWith("connect ")) {
-                const newUrl = term.split(" ")[1].replace(/\/$/, ""); // Get URL and strip trailing slash
+                const newUrl = term.split(" ")[1].replace(/\/$/, "");
                 localStorage.setItem("axiom_node_url", newUrl);
                 log(`NODE LINK UPDATED: ${newUrl}`, "log-green");
                 
-                // Update the UI header to show the new connection
                 document.querySelector('.terminal-header span').innerHTML = 
                     `<span class="status-light"></span>CONNECTED: ${newUrl}`;
                 
@@ -372,14 +357,13 @@
             input.value = "";
             input.disabled = true;
         
-            // Determine which node to talk to (Default to your local port 8009)
+            // Determine which node to talk to (Default to your local port 8009 or whatever port)
             const activeNode = localStorage.getItem("axiom_node_url") || "http://127.0.0.1:8009";
         
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3000);
         
-                // Use the activeNode variable instead of a hardcoded string
                 const response = await fetch(`${activeNode}/local_query?term=${encodeURIComponent(term)}&include_uncorroborated=true`, {
                     signal: controller.signal
                 });

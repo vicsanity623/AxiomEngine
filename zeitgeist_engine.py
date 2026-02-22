@@ -1,6 +1,5 @@
 # Axiom - zeitgeist_engine.py
 # Copyright (C) 2025 The Axiom Contributors
-# --- V3.1: IMPROVED ENTITY RECOGNITION & FILTERING ---
 
 import feedparser
 import spacy
@@ -27,7 +26,6 @@ RSS_FEEDS = [
     "https://www.wired.com/feed/rss",
 ]
 
-# Blacklist of generic terms that are technically entities but boring topics
 IGNORED_ENTITIES = {
     "the", "a", "an", "today", "yesterday", "tomorrow", "monday", "tuesday", 
     "wednesday", "thursday", "friday", "saturday", "sunday", "january", 
@@ -50,7 +48,6 @@ def get_trending_topics(top_n=5):
             feed = feedparser.parse(feed_url)
             if feed.bozo: continue
 
-            # Scan headlines
             for entry in feed.entries[:20]:
                 title = entry.get("title", "")
                 if not title: continue
@@ -61,16 +58,13 @@ def get_trending_topics(top_n=5):
                     text = ent.text.strip()
                     lower_text = text.lower()
                     
-                    # 1. Filter by Entity Label (We want People, Orgs, Countries, Events)
                     if ent.label_ not in ("ORG", "PERSON", "GPE", "EVENT", "WORK_OF_ART", "PRODUCT"):
                         continue
                         
-                    # 2. Filter Junk
                     if lower_text in IGNORED_ENTITIES: continue
-                    if len(text) < 3: continue # Skip "AI", "US", "UK" (too broad sometimes) or "He"
+                    if len(text) < 3: continue
                     if text.isdigit(): continue
                     
-                    # 3. Clean possessives (e.g., "Trump's" -> "Trump")
                     if text.endswith("'s"):
                         text = text[:-2]
 
@@ -83,16 +77,12 @@ def get_trending_topics(top_n=5):
         logger.info("[Zeitgeist] No significant topics found. Defaulting to standard watch list.")
         return ["Artificial Intelligence", "Economy", "SpaceX", "Crypto", "Climate"]
 
-    # Count frequency
     topic_counts = Counter(all_entities)
     
-    # Get top 15 most common, then slice
     common = topic_counts.most_common(15)
     
-    # Extract just the names
     final_topics = [t[0] for t in common]
     
-    # Remove duplicates preserving order (incase cleanup made "Trump's" and "Trump" same)
     seen = set()
     unique_topics = []
     for t in final_topics:
@@ -100,8 +90,7 @@ def get_trending_topics(top_n=5):
             unique_topics.append(t)
             seen.add(t.lower())
             
-    # Return requested amount
     result = unique_topics[:top_n]
     
-    logger.info(f"\033[96m [Zeitgeist Engine] Top topics discovered: {result}\033[0m")
+    logger.info(f"Top topics created: {result}\033[0m")
     return result

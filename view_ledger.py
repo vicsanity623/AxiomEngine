@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # Axiom - view_ledger.py
-# --- V3.1: INSPECTION TOOL ---
 
 import sqlite3
 import sys
@@ -13,6 +12,7 @@ CYAN = "\033[96m"
 GREEN = "\033[92m"
 RED = "\033[91m"
 GRAY = "\033[90m"
+PINK = "\033[95m"
 RESET = "\033[0m"
 
 def print_header(text):
@@ -23,29 +23,71 @@ def print_stats():
     cur = conn.cursor()
     
     try:
+        # 1. Fact Stats
         cur.execute("SELECT status, COUNT(*) FROM facts GROUP BY status")
         stats = cur.fetchall()
-        
         cur.execute("SELECT COUNT(*) FROM facts")
-        total = cur.fetchone()[0]
+        total_facts = cur.fetchone()[0]
         
-        # Check if relationships table exists yet
+        # 2. Relationship Stats
         try:
             cur.execute("SELECT COUNT(*) FROM fact_relationships")
             rels = cur.fetchone()[0]
-        except:
-            rels = 0
+        except: rels = 0
 
-        print_header("LEDGER STATISTICS")
-        print(f"Total Facts:       {total}")
-        print(f"Total Connections: {rels}")
+        # 3. Brain Stats (Lexical Mesh)
+        try:
+            cur.execute("SELECT COUNT(*) FROM lexicon")
+            atoms = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM synapses")
+            synapses = cur.fetchone()[0]
+        except: atoms, synapses = 0, 0
+
+        print_header("LEDGER & MESH STATISTICS")
+        print(f"Total Facts:        {total_facts}")
+        print(f"Fact Relationships: {rels}")
+        print(f"Linguistic Atoms:   {atoms}")
+        print(f"Neural Synapses:    {synapses}")
         print("-" * 30)
+        
         for status, count in stats:
             color = GREEN if status == 'trusted' else (RED if status == 'disputed' else GRAY)
             print(f"{color}{status.ljust(15)}: {count}{RESET}")
 
     except Exception as e:
         print(f"Error reading stats: {e}")
+    finally:
+        conn.close()
+
+def print_brain(limit=15):
+    """NEW: Displays the strongest associations in Axiom's brain."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    
+    try:
+        print_header(f"TOP NEURAL SYNAPSES (Limit: {limit})")
+        cur.execute("""
+            SELECT word_a, word_b, relation_type, strength 
+            FROM synapses 
+            ORDER BY strength DESC LIMIT ?
+        """, (limit,))
+        rows = cur.fetchall()
+
+        if not rows:
+            print(f"{GRAY}Brain is currently vacant. Run a reflection cycle.{RESET}")
+            return
+
+        for row in rows:
+            print(f"  {PINK}{row['word_a'].ljust(12)}{RESET} ←({row['relation_type']})→ {PINK}{row['word_b'].ljust(12)}{RESET} [Strength: {row['strength']}]")
+            
+        print_header("HEAVIEST CONCEPTS")
+        cur.execute("SELECT word, occurrence_count FROM lexicon ORDER BY occurrence_count DESC LIMIT 10")
+        for row in cur.fetchall():
+            print(f"  {row['word'].ljust(15)} : {row['occurrence_count']} occurrences")
+
+    except Exception as e:
+        print(f"Error reading brain: {e}")
     finally:
         conn.close()
 
@@ -61,7 +103,8 @@ def print_facts(limit=20):
     
     for row in rows:
         color = GREEN if row['status'] == 'trusted' else (RED if row['status'] == 'disputed' else GRAY)
-        print(f"{color}[{row['status'].upper()}] Trust: {row['trust_score']}{RESET}")
+        processed = f"{PINK}◈{RESET}" if row.get('lexically_processed') else f"{GRAY}◇{RESET}"
+        print(f"{color}[{row['status'].upper()}] {processed} Trust: {row['trust_score']}{RESET}")
         print(f"   {row['fact_content']}")
         print(f"   {GRAY}Source: {row['source_url']}{RESET}")
         print("")
@@ -69,13 +112,17 @@ def print_facts(limit=20):
     conn.close()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--stats", action="store_true", help="Show stats only")
-    parser.add_argument("--limit", type=int, default=10, help="Number of facts to show")
+    parser = argparse.ArgumentParser(description="Axiom Ledger & Brain Inspector")
+    parser.add_argument("--stats", action="store_true", help="Show summary statistics only")
+    parser.add_argument("--brain", action="store_true", help="Inspect the Lexical Mesh neural pathways")
+    parser.add_argument("--limit", type=int, default=10, help="Number of items to show")
     args = parser.parse_args()
 
     if args.stats:
         print_stats()
+    elif args.brain:
+        print_stats()
+        print_brain(args.limit)
     else:
         print_stats()
         print_facts(args.limit)

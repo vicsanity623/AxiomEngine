@@ -1,6 +1,5 @@
 # Axiom - crucible.py
 # Copyright (C) 2025 The Axiom Contributors
-# --- V3 STRICT GRAMMAR & ENTITY ENFORCEMENT ---
 
 import re
 import hashlib
@@ -12,13 +11,14 @@ from ledger import (
     mark_facts_as_disputed,
     find_similar_fact_from_different_domain,
     update_fact_corroboration,
-    insert_uncorroborated_fact
+    insert_uncorroborated_fact,
+    update_lexical_atom,
+    update_synapse
 )
 
 logger = logging.getLogger(__name__)
 
 NLP_MODEL = load_nlp_model()
-
 
 SUBJECTIVITY_INDICATORS = {
     "believe", "think", "feel", "seems", "appears", "argues", "suggests",
@@ -27,6 +27,32 @@ SUBJECTIVITY_INDICATORS = {
     "allegedly", "rumored", "likely", "probably", "possibly", "opinion",
     "view", "perspective", "stance", "take", "feels", "felt", "thought"
 }
+
+def integrate_fact_to_mesh(fact_content):
+    """
+    Deconstructs a verified fact into its linguistic atoms and synapses.
+    Axiom 'learns' language structure from the facts it gathers.
+    """
+    if not NLP_MODEL: return False
+    
+    doc = NLP_MODEL(fact_content)
+    
+    for token in doc:
+        if token.is_punct or token.is_space:
+            continue
+            
+        update_lexical_atom(token.text, token.pos_)
+        
+        if token.dep_ != "ROOT":
+            relation = token.dep_
+            update_synapse(token.text, token.head.text, relation)
+            
+        if len(doc.ents) > 1:
+            for i, ent1 in enumerate(doc.ents):
+                for ent2 in doc.ents[i+1:]:
+                    update_synapse(ent1.text, ent2.text, "shared_context")
+
+    return True
 
 def _sanitize_text(text):
     """Basic cleanup before NLP processing."""
@@ -152,7 +178,7 @@ def extract_facts_from_text(source_url, text_content):
         logger.info(f"\033[94m[The Crucible] Analysis complete. Found {contradictions} contradictions.\033[0m")
     
     if newly_created_facts:
-        logger.info(f"\033[96m[The Crucible] Created {len(newly_created_facts)} new facts.\033[0m")
+        logger.info(f"[The Crucible] Created {len(newly_created_facts)} new facts.")
     else:
         logger.info(f"\033[90m[The Crucible] Analysis complete. No high-confidence facts extracted.\033[0m")
         

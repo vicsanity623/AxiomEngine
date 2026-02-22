@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Axiom Engine - Build System V3 (Hardened for Python 3.13)
-Generates standalone executables and macOS DMG installers.
+Axiom Engine - Build System V3.2 (Hardened for Python 3.13)
+Generates standalone executables and professional macOS DMG installers.
 
-FIXES:
-- Segfault -11: Removed --collect-submodules which crashes on Python 3.13 + lxml.
-- macOS DMG: Integrated create-dmg for Intel/Silicon support.
+FEATURES:
+- Drag-to-Applications: Professional macOS installation.
+- Web UI Bundling: Includes index.html for mobile/web terminal access.
+- Hardened for Python 3.13: Fixes lxml segfaults.
 """
 
 import os
@@ -27,18 +28,15 @@ def check_requirements():
 
     if platform.system() == "Darwin":
         if shutil.which("create-dmg") is None:
-            print("Warning: 'create-dmg' not found. Will skip DMG creation.")
+            print("Warning: 'create-dmg' not found. DMG will be missing Application shortcut.")
             print("Fix: brew install create-dmg")
 
 def get_spacy_data():
     """Locates the actual data folder for en_core_web_sm."""
     import en_core_web_sm
-    # This gets the folder containing the actual weights/config
     path = os.path.dirname(en_core_web_sm.__file__)
     sep = ";" if os.name == "nt" else ":"
     
-    # We MUST point directly to the folder with 'config.cfg'
-    # en_core_web_sm/en_core_web_sm_3.x.x/
     subfolders = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f)) and f.startswith("en_core_web_sm")]
     if subfolders:
         actual_data_path = os.path.join(path, subfolders[0])
@@ -49,7 +47,9 @@ def get_spacy_data():
 def build_binary():
     print(f"--- [2/5] Compiling Binary (Python {platform.python_version()}) ---")
     
-    # We avoid --collect-submodules because it triggers a segfault in lxml/Python 3.13
+    # Separator for --add-data
+    sep = ";" if os.name == "nt" else ":"
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         MAIN_SCRIPT,
@@ -57,11 +57,16 @@ def build_binary():
         "--onefile",
         "--clean",
         "--noconfirm",
+        # 1. Bundle SpaCy AI Model
         "--add-data", get_spacy_data(),
+        # 2. Bundle Web Interface (Critical for node.py @app.route('/'))
+        "--add-data", f"index.html{sep}.",
+        
         # Manually specify hidden imports to avoid the crashing crawler
         "--hidden-import", "spacy",
         "--hidden-import", "en_core_web_sm",
         "--hidden-import", "flask",
+        "--hidden-import", "flask_cors", # NEW
         "--hidden-import", "requests",
         "--hidden-import", "feedparser",
         "--hidden-import", "trafilatura",
@@ -69,7 +74,8 @@ def build_binary():
         "--hidden-import", "networkx",
         "--hidden-import", "pyvis",
         "--hidden-import", "sqlite3",
-        # Ignore problematic hooks
+        
+        # Exclude heavy but unused modules
         "--exclude-module", "tkinter", 
         "--exclude-module", "matplotlib"
     ]
@@ -80,12 +86,13 @@ def build_binary():
         sys.exit(result.returncode)
 
 def create_dmg():
+    """Creates a professional DMG with 'Drag to Applications' shortcut."""
     if platform.system() != "Darwin" or shutil.which("create-dmg") is None:
         return
 
-    print("--- [3/5] Packaging DMG for macOS ---")
-    arch = platform.machine() # arm64 (Silicon) or x86_64 (Intel)
-    dmg_name = f"Axiom_Node_v3.0_{arch}.dmg"
+    print("--- [3/5] Packaging Professional DMG for macOS ---")
+    arch = platform.machine()
+    dmg_name = f"Axiom_Node_v3.2_{arch}.dmg"
     dist_dir = os.path.join(os.getcwd(), "dist")
     binary_path = os.path.join(dist_dir, APP_NAME)
     dmg_path = os.path.join(dist_dir, dmg_name)
@@ -99,12 +106,14 @@ def create_dmg():
     os.makedirs(staging)
     shutil.copy(binary_path, staging)
 
+    # DMG Command with Application Shortcut
     cmd = [
         "create-dmg",
-        "--volname", f"Axiom Node ({arch})",
-        "--window-size", "500", "300",
+        "--volname", f"Axiom Node Installer",
+        "--window-size", "600", "400",
         "--icon-size", "100",
-        "--icon", APP_NAME, "250", "150",
+        "--icon", APP_NAME, "150", "190",
+        "--app-drop-link", "450", "190", # THE DRAG-TO-APPLICATIONS MAGIC
         "--hide-extension", APP_NAME,
         dmg_path,
         staging
@@ -112,7 +121,7 @@ def create_dmg():
     
     subprocess.run(cmd)
     shutil.rmtree(staging)
-    print(f"\033[92mDMG created: dist/{dmg_name}\033[0m")
+    print(f"\033[92mSUCCESS: Installer created at dist/{dmg_name}\033[0m")
 
 def cleanup():
     print("--- [4/5] Cleaning Build Artifacts ---")

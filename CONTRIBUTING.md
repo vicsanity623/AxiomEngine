@@ -2,7 +2,7 @@
 
 First off, thank you for joining the collective. Axiom is a **digital commonwealth**—a public utility for truth that only grows stronger through the diverse contributions of its operators, architects, and auditors.
 
-This document is your mission briefing for getting set up and making your first contribution.
+This document is your mission briefing for getting set up and making your first contribution to the **Lexical Mesh**.
 
 ---
 
@@ -12,50 +12,50 @@ You don't need to be a kernel developer to help ground reality. We value all for
 
 | Pillar | Role | Description |
 | :--- | :--- | :--- |
-| 🛡️ **The Operator** | **Node Runner** | Run a stable node to strengthen the network's knowledge base. |
-| 🔍 **The Auditor** | **Bug Hunter** | Identify vulnerabilities or "logical hallucinations" in the fact-extraction logic. |
-| 🏗️ **The Architect** | **Developer** | Write core Python code for the Crucible, Synthesizer, or P2P protocol. |
-| ✍️ **The Scribe** | **Documentation**| Improve clarity in guides, whitepapers, or technical specs. |
+| 🛡️ **The Operator** | **Node Runner** | Run a stable node and enable your Funnel to strengthen the network. |
+| 🔍 **The Auditor** | **Logic Auditor** | Identify "logical hallucinations" in the Lexical Mesh or Crucible filters. |
+| 🏗️ **The Architect** | **Developer** | Refine the deterministic Python engine or the mobile terminal UI. |
+| ✍️ **The Scribe** | **Documentation**| Improve the clarity of the Lexical Mesh technical specifications. |
 
 ---
 
 ## ◈ Quick Start: Development Setup
 
 ### 1. Prerequisites
-Ensure you have **Python 3.10+** installed. We also recommend using a virtual environment (`venv` or `conda`).
+Ensure you have **Python 3.13+** installed. We also recommend using a virtual environment (`venv`).
 
 ### 2. Clone & Install
 ```bash
 # Fork the repo on GitHub, then clone your fork:
-git clone https://github.com/YOUR_USERNAME/AxiomEngine.git
+git clone https://github.com/vicsanity623/AxiomEngine.git
 cd AxiomEngine
 
-# Install required Python libraries
+# Install hardened dependencies
 pip install -r requirements.txt
 
-# Download the Analytical AI model (The Crucible's brain)
+# Download the Analytical AI model (The Lexical Mesh's foundation)
 python -m spacy download en_core_web_sm
 ```
 
-> **Note:** Axiom is self-sufficient. **No API keys are required** for development. The engine gathers knowledge from public RSS streams.
+> **Note:** Axiom is strictly **Anti-AI**. Do not attempt to integrate Transformer, Torch, or any LLM-based libraries. We use deterministic, symbolic mapping only.
 
 ### 3. Launching Your Local Mesh
-You can run multiple nodes on a single machine to test P2P synchronization.
+You can run multiple nodes on a single machine to test P2P synchronization and Lexical Mesh consistency.
 
 **Node A (The Bootstrap):**
 ```bash
-export PORT=5000
+export PORT=8009
 python node.py
 ```
 
 **Node B (The Peer):**
 Open a new terminal tab:
 ```bash
-export PORT=5001
-export BOOTSTRAP_PEER=http://127.0.0.1:5000
+export PORT=8010
+export BOOTSTRAP_PEER=http://127.0.0.1:8009
 python node.py
 ```
-*Your nodes will now begin a bidirectional sync. Node A will automatically learn about Node B once the first connection is made via the `X-Axiom-Peer` header.*
+*Your nodes will now begin a bidirectional sync. You can verify the brain's growth using `python view_ledger.py --brain`.*
 
 ---
 
@@ -63,20 +63,20 @@ python node.py
 
 ### 1. Branching Protocol
 Never work directly on `main`. Create a descriptive feature branch:
-- `feat/add-subjectivity-filter`
-- `fix/p2p-timeout-logic`
-- `docs/update-dao-charter`
+- `feat/shredder-logic-update`
+- `fix/tailscale-handshake-timeout`
+- `docs/explain-synapse-weighting`
 
 ### 2. Conventional Commits
-We use the [Conventional Commits](https://www.conventionalcommits.org/) standard to keep the ledger of our progress clean:
-- `feat(Crucible): add weighted entity recognition`
-- `fix(P2P): resolve sqlite lock on high-volume sync`
-- `chore: update requirements.txt`
+We use the [Conventional Commits](https://www.conventionalcommits.org/) standard to keep the progress ledger clean:
+- `feat(Crucible): add specific entity weight for LAW tags`
+- `fix(P2P): deduplicate local vs public node identities`
+- `chore: update requirements.txt for python 3.13`
 
 ### 3. Pull Requests (PRs)
 When you are ready, submit a PR against the `main` branch. 
-- **Be Descriptive:** Explain *what* you changed and *why* it improves the grounding engine.
-- **Visuals:** If you changed the CLI output or the Knowledge Graph, include a screenshot!
+- **Deterministic Check:** Ensure your code does not add probabilistic "guessing" or external API dependencies.
+- **Visuals:** If you updated the terminal UI or the Lexical Mesh visualizer, include a screenshot!
 
 ---
 
@@ -85,8 +85,7 @@ When you are ready, submit a PR against the `main` branch.
 The Axiom collective coordinates through these primary channels:
 
 - ◈ **Discord:** [Join the Collective](https://discord.gg/axiom) (Technical deep-dives & DAO planning)
-- ◈ **Reddit:** [r/AxiomEngine](https://reddit.com/r/AxiomEngine) (General discussion & news)
-- ◈ **GitHub Issues:** [The Project Board](https://github.com/vicsanity623/AxiomEngine/issues) (Track what we are building)
+- ◈ **GitHub Issues:** [The Project Board](https://github.com/vicsanity623/AxiomEngine/issues) (Track the V4 Terminal progress)
 
 ---
 

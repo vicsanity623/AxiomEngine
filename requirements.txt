@@ -1,13 +1,13 @@
-# Axiom Engine - Core Dependencies V3.1
+# Axiom Engine - Core Dependencies V3.2
 # ------------------------------------
 # Installation: pip install -r requirements.txt
 # Model Install: python -m spacy download en_core_web_sm
 
 # --- Core Infrastructure ---
 Flask>=3.0.0
+flask-cors>=4.0.0
 gunicorn>=22.0.0
 requests>=2.31.0
-sqlite3-binary; python_version < '3.10' # Built-in for most, but helps on some distros
 
 # --- Discovery & Extraction (The Pathfinder) ---
 feedparser>=6.0.11
@@ -15,15 +15,12 @@ trafilatura>=1.12.0
 beautifulsoup4>=4.12.3
 lxml>=5.2.0
 
-# --- Analytical AI (The Crucible) ---
+# --- Analytical AI (The Crucible & Lexical Mesh) ---
 spacy>=3.7.5
 
-# --- Knowledge Graph (The Synthesizer) ---
+# --- Knowledge Graph & Visualization ---
 networkx>=3.2.0
 pyvis>=0.3.2
 
-# --- Client Interface (The GUI) ---
-PyQt6>=6.7.0
-
-# --- Build System ---
+# --- Build System (Self-Compile) ---
 pyinstaller>=6.10.0

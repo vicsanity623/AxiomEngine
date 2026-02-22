@@ -1,14 +1,12 @@
 # Axiom - synthesizer.py
 # Copyright (C) 2025 The Axiom Contributors
-# --- V3 WEIGHTED KNOWLEDGE GRAPHING ---
 
 import spacy
 import logging
-from ledger import get_all_facts_for_analysis, insert_relationship
+from ledger import get_all_facts_for_analysis, insert_relationship, update_synapse
 from axiom_model_loader import load_nlp_model
 
 logger = logging.getLogger(__name__)
-
 
 NLP_MODEL = load_nlp_model()
 
@@ -55,7 +53,7 @@ def get_weighted_entities(text):
 def link_related_facts(new_facts_batch):
     """
     Compares a batch of new facts against the ledger.
-    Creates links only if the 'Connection Score' is high enough.
+    Creates links and reinforces Neural Synapses between concepts.
     """
     if not NLP_MODEL or not new_facts_batch:
         return
@@ -97,8 +95,13 @@ def link_related_facts(new_facts_batch):
             if total_score >= 2:
                 insert_relationship(new_fact['id'], existing_fact['fact_id'], int(total_score))
                 links_created += 1
+                
+                if len(shared_terms) > 1:
+                    for i, term1 in enumerate(shared_terms):
+                        for term2 in shared_terms[i+1:]:
+                            update_synapse(term1, term2, "conceptual_bridge")
 
     if links_created > 0:
-        logger.info(f"\033[92m[The Synthesizer] Linking complete. Established {links_created} new connections.\033[0m")
+        logger.info(f"Linking Success. Created {links_created} new graph connections.")
     else:
-        logger.info("[The Synthesizer] No strong correlations found.")
+        logger.info("\033[93m[The Synthesizer] No strong correlations found.\033[0m")

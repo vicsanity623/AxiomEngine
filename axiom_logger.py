@@ -1,18 +1,16 @@
-# axiom_logger.py
 import logging
 import sys
 from datetime import datetime
 
-# ANSI Color Codes
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
 RED = "\033[91m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
-BLUE = "\033[94m"         # For Contradictions
-MAGENTA = "\033[95m"      # Pink - For Uncorroborated
-CYAN = "\033[96m"         # Light Blue - For New Facts
+BLUE = "\033[94m"
+MAGENTA = "\033[95m"
+CYAN = "\033[96m"
 WHITE = "\033[97m"
 
 class AxiomFormatter(logging.Formatter):
@@ -22,11 +20,8 @@ class AxiomFormatter(logging.Formatter):
     """
 
     def format(self, record):
-        # 1. format the timestamp: 12:00:00AM
-        # %I is 12h clock, %M min, %S sec, %p is AM/PM
         timestamp = datetime.fromtimestamp(record.created).strftime("%I:%M:%S%p")
         
-        # 2. Determine color based on content keywords or Log Level
         msg = record.getMessage()
         lower_msg = msg.lower()
 
@@ -37,10 +32,10 @@ class AxiomFormatter(logging.Formatter):
             color = BLUE
             icon = "‼"
         elif "uncorroborated" in lower_msg:
-            color = MAGENTA # Pink
+            color = MAGENTA
             icon = "?"
         elif "new fact" in lower_msg or "success" in lower_msg or "created" in lower_msg:
-            color = CYAN # Light Blue
+            color = CYAN
             icon = "✓"
         elif "initializing" in lower_msg or "starting" in lower_msg:
             color = YELLOW
@@ -49,9 +44,6 @@ class AxiomFormatter(logging.Formatter):
             color = WHITE
             icon = "•"
 
-        # 3. Build the styled string
-        # Format: [TIME] [ICON] MESSAGE
-        # The timestamp gets the same color as the message, or we can make it DIM
         formatted_time = f"{DIM}{timestamp}{RESET}"
         formatted_msg = f"{color}{icon} {msg}{RESET}"
         
@@ -62,7 +54,6 @@ def setup_logger():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # Prevent adding multiple handlers if function is called twice
     if logger.hasHandlers():
         logger.handlers.clear()
 
@@ -70,5 +61,4 @@ def setup_logger():
     handler.setFormatter(AxiomFormatter())
     logger.addHandler(handler)
     
-    # Mute standard Flask/Workzeug generic logs slightly to keep console clean
     logging.getLogger('werkzeug').setLevel(logging.ERROR)

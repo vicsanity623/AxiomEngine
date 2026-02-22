@@ -1,6 +1,5 @@
 # Axiom - ledger.py
 # Copyright (C) 2025 The Axiom Contributors
-# --- V3 GRAPH-READY DATABASE & DOMAIN DEDUPLICATION ---
 
 import sqlite3
 import logging
@@ -14,7 +13,6 @@ DB_NAME = "axiom_ledger.db"
 REQUIRED_CORROBORATING_DOMAINS = 3
 
 def _domain_from_url(url):
-    """Extracts the base domain (e.g., 'bbc.com') to prevent gaming the system with multiple links from one site."""
     try:
         parsed = urlparse(url)
         domain = parsed.netloc
@@ -25,9 +23,6 @@ def _domain_from_url(url):
         return "unknown"
 
 def initialize_database():
-    """
-    Creates the 'facts' table and the 'fact_relationships' table if they don't exist.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     logger.info("[Ledger] Initializing and verifying database schema...")
@@ -41,7 +36,8 @@ def initialize_database():
             trust_score INTEGER NOT NULL DEFAULT 1,
             status TEXT NOT NULL DEFAULT 'uncorroborated',
             corroborating_sources TEXT,
-            contradicts_fact_id TEXT
+            contradicts_fact_id TEXT,
+            lexically_processed INTEGER DEFAULT 0
         )
     """)
     
@@ -54,13 +50,30 @@ def initialize_database():
             UNIQUE(fact_id_1, fact_id_2)
         )
     """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lexicon (
+            word TEXT PRIMARY KEY,
+            pos_tag TEXT,
+            occurrence_count INTEGER DEFAULT 1
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS synapses (
+            word_a TEXT NOT NULL,
+            word_b TEXT NOT NULL,
+            relation_type TEXT,
+            strength INTEGER DEFAULT 1,
+            PRIMARY KEY (word_a, word_b, relation_type)
+        )
+    """)
 
     conn.commit()
     conn.close()
-    logger.info("\033[92m[Ledger] Database schema is up-to-date.\033[0m")
+    logger.info("Starting... Database schema is up-to-date. Ledger Synced.")
 
 def get_all_facts_for_analysis():
-    """Returns all facts as a list of dictionaries."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -74,13 +87,9 @@ def get_all_facts_for_analysis():
         conn.close()
 
 def insert_uncorroborated_fact(fact_id, fact_content, source_url):
-    """
-    Inserts a new fact. Returns the dict if successful, None if it's a duplicate.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     timestamp = datetime.now(timezone.utc).isoformat()
-    
     try:
         cursor.execute("""
             INSERT INTO facts (fact_id, fact_content, source_url, ingest_timestamp_utc, trust_score, status)
@@ -90,87 +99,46 @@ def insert_uncorroborated_fact(fact_id, fact_content, source_url):
         return {"fact_id": fact_id, "fact_content": fact_content, "source_url": source_url}
     except sqlite3.IntegrityError:
         return None
-    except Exception as e:
-        logger.error(f"[Ledger] Insert Error: {e}")
-        return None
     finally:
         conn.close()
 
 def find_similar_fact_from_different_domain(fact_content, source_domain, all_facts):
-    """
-    Simple check: does the exact start of the sentence match another fact
-    from a DIFFERENT domain?
-    """
     content_start = fact_content[:60].lower()
     source_domain = source_domain.lower()
-
     for fact in all_facts:
-        existing_url = fact['source_url']
-        existing_domain = _domain_from_url(existing_url)
-        
-        if source_domain == existing_domain:
-            continue
-            
+        existing_domain = _domain_from_url(fact['source_url'])
+        if source_domain == existing_domain: continue
         if fact['fact_content'].lower().startswith(content_start):
             return fact
-            
     return None
 
 def update_fact_corroboration(fact_id, new_source_url):
-    """
-    Adds a new source to an existing fact.
-    Updates 'trust_score' based on UNIQUE domains.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
     try:
-        cursor.execute("SELECT source_url, corroborating_sources, trust_score FROM facts WHERE fact_id = ?", (fact_id,))
+        cursor.execute("SELECT source_url, corroborating_sources FROM facts WHERE fact_id = ?", (fact_id,))
         row = cursor.fetchone()
         if not row: return
-
-        original_url, existing_sources_str, current_score = row
-        
-        domains = set()
-        domains.add(_domain_from_url(original_url))
-        
+        original_url, existing_sources_str = row
+        domains = {_domain_from_url(original_url)}
         if existing_sources_str:
             for s in existing_sources_str.split(','):
                 if s.strip(): domains.add(_domain_from_url(s))
-        
         new_domain = _domain_from_url(new_source_url)
-        if new_domain in domains:
-            new_sources_str = (existing_sources_str + "," + new_source_url) if existing_sources_str else new_source_url
-            cursor.execute("UPDATE facts SET corroborating_sources = ? WHERE fact_id = ?", (new_sources_str, fact_id))
-        else:
-            domains.add(new_domain)
-            new_score = len(domains)
-            status = 'trusted' if new_score >= REQUIRED_CORROBORATING_DOMAINS else 'uncorroborated'
-            
-            new_sources_str = (existing_sources_str + "," + new_source_url) if existing_sources_str else new_source_url
-            
-            cursor.execute("""
-                UPDATE facts 
-                SET trust_score = ?, status = ?, corroborating_sources = ? 
-                WHERE fact_id = ?
-            """, (new_score, status, new_sources_str, fact_id))
-            
-            logger.info(f"\033[92m  [Ledger] Fact validated by new domain ({new_domain}). Trust Score: {new_score}\033[0m")
-            
+        domains.add(new_domain)
+        new_score = len(domains)
+        status = 'trusted' if new_score >= REQUIRED_CORROBORATING_DOMAINS else 'uncorroborated'
+        new_sources_str = (existing_sources_str + "," + new_source_url) if existing_sources_str else new_source_url
+        cursor.execute("UPDATE facts SET trust_score = ?, status = ?, corroborating_sources = ? WHERE fact_id = ?", 
+                       (new_score, status, new_sources_str, fact_id))
         conn.commit()
-    except Exception as e:
-        logger.error(f"[Ledger] Update Error: {e}")
     finally:
         conn.close()
 
 def mark_facts_as_disputed(original_fact_id, new_fact_id, new_fact_content, new_source_url):
-    """
-    Links two facts as contradictions.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     timestamp = datetime.now(timezone.utc).isoformat()
-    
     try:
         try:
             cursor.execute("""
@@ -179,35 +147,60 @@ def mark_facts_as_disputed(original_fact_id, new_fact_id, new_fact_content, new_
             """, (new_fact_id, new_fact_content, new_source_url, timestamp, original_fact_id))
         except sqlite3.IntegrityError:
             cursor.execute("UPDATE facts SET status='disputed', contradicts_fact_id=? WHERE fact_id=?", (original_fact_id, new_fact_id))
-
         cursor.execute("UPDATE facts SET status='disputed', contradicts_fact_id=? WHERE fact_id=?", (new_fact_id, original_fact_id))
-        
         conn.commit()
-    except Exception as e:
-        logger.error(f"[Ledger] Dispute Error: {e}")
     finally:
         conn.close()
 
 def insert_relationship(fact_id_1, fact_id_2, weight):
-    """
-    Inserts a graph edge. 
-    Orders IDs alphabetically to prevent A->B and B->A duplicates.
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    if fact_id_1 > fact_id_2:
-        id1, id2 = fact_id_2, fact_id_1
-    else:
-        id1, id2 = fact_id_1, fact_id_2
-
+    id1, id2 = (fact_id_1, fact_id_2) if fact_id_1 < fact_id_2 else (fact_id_2, fact_id_1)
     try:
-        cursor.execute("""
-            INSERT OR IGNORE INTO fact_relationships (fact_id_1, fact_id_2, weight)
-            VALUES (?, ?, ?)
-        """, (id1, id2, weight))
+        cursor.execute("INSERT OR IGNORE INTO fact_relationships (fact_id_1, fact_id_2, weight) VALUES (?, ?, ?)", (id1, id2, weight))
         conn.commit()
-    except Exception as e:
-        logger.error(f"[Ledger] Graph Insert Error: {e}")
     finally:
         conn.close()
+
+def get_unprocessed_facts_for_lexicon():
+    """Fetches facts that the brain hasn't learned from yet."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM facts WHERE lexically_processed = 0 AND status != 'disputed'")
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def mark_fact_as_processed(fact_id):
+    """Signals that a fact has been integrated into the Lexical Mesh."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE facts SET lexically_processed = 1 WHERE fact_id = ?", (fact_id,))
+    conn.commit()
+    conn.close()
+
+def update_lexical_atom(word, pos):
+    """Adds a word to the lexicon or increments its weight."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO lexicon (word, pos_tag, occurrence_count) 
+        VALUES (?, ?, 1) 
+        ON CONFLICT(word) DO UPDATE SET occurrence_count = occurrence_count + 1
+    """, (word.lower(), pos))
+    conn.commit()
+    conn.close()
+
+def update_synapse(word_a, word_b, relation):
+    """Strengthens the neural association between two concepts."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    w1, w2 = (word_a, word_b) if word_a < word_b else (word_b, word_a)
+    cursor.execute("""
+        INSERT INTO synapses (word_a, word_b, relation_type, strength)
+        VALUES (?, ?, ?, 1)
+        ON CONFLICT(word_a, word_b, relation_type) DO UPDATE SET strength = strength + 1
+    """, (w1.lower(), w2.lower(), relation))
+    conn.commit()
+    conn.close()

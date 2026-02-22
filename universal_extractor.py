@@ -49,7 +49,6 @@ class ContentSanitizer:
             p = p.strip()
             if not ContentSanitizer.is_valid_sentence(p): continue
             
-            # Context Match
             if topic_lower in p.lower() or any(w in p.lower() for w in topic_parts if len(w) > 3):
                 clean_paragraphs.append(p)
 
@@ -61,11 +60,9 @@ def _manual_bs4_extraction(html):
     Used if Trafilatura fails (common in standalone builds).
     """
     soup = BeautifulSoup(html, "html.parser")
-    # Remove script and style elements
     for script in soup(["script", "style", "nav", "footer", "header"]):
         script.decompose()
     
-    # Get text, joining paragraphs with newlines
     paragraphs = [p.get_text() for p in soup.find_all('p')]
     return "\n".join(paragraphs)
 
@@ -83,16 +80,13 @@ def _fetch_article_text(url, timeout=12):
         resp.raise_for_status()
         html_content = resp.text
 
-        # 1. Try Trafilatura (AI-based extraction)
         try:
             text = trafilatura.extract(html_content, include_comments=False, favor_precision=True)
             if text and len(text) > 200:
                 return text
         except Exception as e:
-            # This catches the 'min_extracted_size' config error in standalone builds
             logger.debug(f"Trafilatura failed in standalone mode: {e}")
 
-        # 2. Fallback to manual BS4 extraction if Trafilatura crashed/failed
         return _manual_bs4_extraction(html_content)
 
     except Exception as e:
@@ -121,16 +115,13 @@ def find_and_extract(topic, max_sources=3):
                 summary = entry.get("summary", "")
                 combined_meta = (title + " " + summary).lower()
                 
-                # Relevance Check
                 if topic.lower() in combined_meta or any(k in combined_meta for k in topic_keywords if len(k) > 3):
                     seen_urls.add(link)
                     
-                    # Get Date
                     entry_time = None
                     if hasattr(entry, "published_parsed") and entry.published_parsed:
                         entry_time = datetime(*entry.published_parsed[:6])
                     
-                    # Extract Content
                     full_text = _fetch_article_text(link)
 
                     if full_text:
@@ -142,7 +133,6 @@ def find_and_extract(topic, max_sources=3):
                             extracted_content.append(data)
                             continue 
 
-                    # Double Fallback: If full extraction failed, use the RSS summary itself
                     if summary:
                         clean_summary = BeautifulSoup(summary, "html.parser").get_text()
                         if ContentSanitizer.is_valid_sentence(clean_summary):
@@ -154,5 +144,5 @@ def find_and_extract(topic, max_sources=3):
         except Exception:
             continue
 
-    logger.info(f"\033[96m [Pathfinder/Extractor] Found {len(extracted_content)} valid sources.\033[0m")
+    logger.info(f"Success. Found {len(extracted_content)} valid sources.")
     return extracted_content
