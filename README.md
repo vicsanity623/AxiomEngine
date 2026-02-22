@@ -8,13 +8,13 @@
 
 [![License: PPL](https://img.shields.io/badge/License-PPL-blue.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-cyan.svg)](https://www.python.org/downloads/)
-[![Release](https://img.shields.io/badge/Release-v3.2--Lexical--Mesh-magenta.svg)]()
-[![Build](https://img.shields.io/badge/Build-Passing-brightgreen.svg)]()
+[![Release](https://img.shields.io/badge/Release-v0.2.0--voice-magenta.svg)]()
+[![Build](https://github.com/vicsanity623/AxiomEngine/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/vicsanity623/AxiomEngine/actions/workflows/build.yml)
 [![Network](https://img.shields.io/badge/Network-P2P--Live-00f0ff.svg)]()
 
 **Autonomous. Anonymous. Anti-AI. The deterministic bedrock for shared reality.**
 
-[Website](TBD) • [Documentation](TBD) • [DAO Charter](DAO.md) • [Discord](TBD)
+[Website](TBD) • [Documentation](TBD) • [DAO Charter](DAO_CHARTER.md) • [Discord](TBD)
 
 </div>
 
@@ -139,14 +139,14 @@ Axiom provides high-fidelity tools to watch the network think in real-time.
 
 *   **Audit the Ledger & Brain:**
     ```bash
+    python view_ledger.py
     python view_ledger.py --stats  # General Health
     python view_ledger.py --brain  # Top Neural Synapses
     ```
 
 *   **Visualize the Constellation:**
     ```bash
-    python visualize_graph.py          # Fact-to-Fact Knowledge Graph
-    python visualize_graph.py --brain  # Lexical Mesh (Linguistic Brain)
+    python visualize_graph.py          # Fact-to-Fact Knowledge Graph and Brain Graph
     ```
 
 ---
