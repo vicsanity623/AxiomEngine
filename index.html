@@ -345,14 +345,20 @@
             const term = input.value.trim();
             if (!term) return;
         
-            // If you type: connect https://your-tailscale-url.ts.net
             if (term.startsWith("connect ")) {
-                const newUrl = term.split(" ")[1].replace(/\/$/, "");
+                let newUrl = term.split(" ")[1].replace(/\/$/, "");
+                
+                if (window.location.protocol === 'https:' && !newUrl.startsWith('https://')) {
+                    log("SECURITY UPGRADE: Forcing HTTPS for Secure Context", "log-dim");
+                    newUrl = newUrl.replace('http://', 'https://');
+                    if (!newUrl.startsWith('https://')) newUrl = 'https://' + newUrl;
+                }
+        
                 localStorage.setItem("axiom_node_url", newUrl);
                 log(`NODE LINK UPDATED: ${newUrl}`, "log-green");
                 
                 document.querySelector('.terminal-header span').innerHTML = 
-                    `<span class="status-light"></span>CONNECTED: ${newUrl}`;
+                    `<span class="status-light"></span>CONNECTED: ${newUrl.replace(/^https?:\/\//, "")}`;
                 
                 input.value = "";
                 return;
@@ -362,48 +368,51 @@
             input.value = "";
             input.disabled = true;
         
-            // Determine which node to talk to (Default to your local port 8009 or whatever port)
-            const activeNode = localStorage.getItem("axiom_node_url") || "http://127.0.0.1:8009";
+            const githubDefault = "https://vics-imac-1.tail137b4f2.ts.net";
+            const localDefault = "http://127.0.0.1:8009";
+            
+            const activeNode = localStorage.getItem("axiom_node_url") || 
+                               (window.location.hostname.includes("github.io") ? githubDefault : localDefault);
         
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout for Tailscale lag
         
                 const response = await fetch(`${activeNode}/local_query?term=${encodeURIComponent(term)}&include_uncorroborated=true`, {
-                    signal: controller.signal
+                    signal: controller.signal,
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
                 });
                 clearTimeout(timeoutId);
         
                 const data = await response.json();
                 
                 if (data.results && data.results.length > 0) {
-                    log(`SUCCESS. RETRIEVED ${data.results.length} FACTS FROM LEDGER.`, 'log-green');
-                    
+                    log(`SUCCESS. RETRIEVED ${data.results.length} FACTS.`, 'log-green');
                     data.results.forEach(fact => {
-                        let color = "log-pink";
-                        let statusTag = "[UNCORROBORATED]";
-                        if(fact.status === 'trusted') { color = "log-green"; statusTag = "[TRUSTED]"; }
-                        else if (fact.status === 'disputed') { color = "log-red"; statusTag = "[DISPUTED]"; }
-        
-                        log(`> ${statusTag} ${fact.fact_content}`, color);
+                        let color = fact.status === 'trusted' ? "log-green" : (fact.status === 'disputed' ? "log-red" : "log-pink");
+                        log(`> [${fact.status.toUpperCase()}] ${fact.fact_content}`, color);
                     });
                 } else {
-                    log(`QUERY COMPLETE. NO RECORDS FOUND FOR "${term}".`, 'log-dim');
+                    log(`QUERY COMPLETE. NO RECORDS FOR "${term}".`, 'log-dim');
                 }
         
             } catch (error) {
-                log(`WARN: NODE [${activeNode}] UNREACHABLE.`, "log-red");
+
+                if (window.location.protocol === 'https:' && activeNode.startsWith('http://')) {
+                    log("CRITICAL: Browser blocked insecure link (Mixed Content).", "log-red");
+                    log("FIX: Type 'connect https://<your-tailscale-url>'", "log-cyan");
+                } else {
+                    log(`WARN: NODE [${activeNode}] UNREACHABLE.`, "log-red");
+                    log("HINT: Ensure 'tailscale funnel 8009' is running on iMac.", "log-dim");
+                }
                 
+
                 setTimeout(() => {
                     log("Simulation: Scanning Distributed Hash Table...", "log-cyan");
-                }, 500);
-        
-                setTimeout(() => {
-                    log(`Simulation: Found 2 demo records for "${term}"`, "log-green");
-                    log(`> [TRUSTED] The entity '${term}' was identified in 42 secure contexts.`, "log-green");
-                    log(`> [UNCORROBORATED] Recent activity detected via RSS streams regarding '${term}'.`, "log-pink");
-                    log("NOTE: TYPE 'connect <url>' TO LINK A LIVE NODE.", "log-red");
-                }, 1500);
+                }, 800);
             }
         
             input.disabled = false;
