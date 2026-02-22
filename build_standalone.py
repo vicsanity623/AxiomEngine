@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Axiom Engine - Build System V3.2 (Hardened for Python 3.13)
+Axiom Engine - Build System V0.1.0 (Hardened for Python 3.13)
 Generates standalone executables and professional macOS DMG installers.
 
 FEATURES:
@@ -92,7 +92,7 @@ def create_dmg():
 
     print("--- [3/5] Packaging Professional DMG for macOS ---")
     arch = platform.machine()
-    dmg_name = f"Axiom_Node_v3.2_{arch}.dmg"
+    dmg_name = f"Axiom_Node_v0.1.0_{arch}.dmg"
     dist_dir = os.path.join(os.getcwd(), "dist")
     binary_path = os.path.join(dist_dir, APP_NAME)
     dmg_path = os.path.join(dist_dir, dmg_name)
