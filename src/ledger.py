@@ -1,18 +1,23 @@
 # Axiom - ledger.py
 # Copyright (C) 2026 The Axiom Contributors
+# --- V3.5: DYNAMIC DB PATHING ACROSS ALL UTILITIES ---
 
 import logging
 import sqlite3
 import zlib
 from datetime import UTC, datetime
 from urllib.parse import urlparse
+from typing import Any # Added for type hinting consistency
+
+# Removed: DB_NAME = "axiom_ledger.db"
 
 from src.config import REQUIRED_CORROBORATING_DOMAINS
 
 logger = logging.getLogger(__name__)
 
-DB_NAME = "axiom_ledger.db"
-
+# Define a default path here only if necessary for functions called without arguments, 
+# but ideally all calls should pass the path.
+DEFAULT_DB_PATH = "axiom_ledger.db" 
 
 def _domain_from_url(url):
     """Extracts the base domain (e.g., 'bbc.com') to prevent gaming the system with multiple links from one site."""
@@ -25,11 +30,11 @@ def _domain_from_url(url):
         return "unknown"
 
 
-def initialize_database():
+def initialize_database(db_path: str = DEFAULT_DB_PATH):
     """Creates the 'facts' table and the 'fact_relationships' table if they don't exist."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    logger.info("[Ledger] Initializing and verifying database schema...")
+    logger.info(f"[Ledger] Initializing and verifying database schema at: {db_path}...")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS facts (
@@ -74,20 +79,6 @@ def initialize_database():
         )
     """)
 
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_lexicon_word ON lexicon(word)",
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_synapse_a ON synapses(word_a)",
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_synapse_b ON synapses(word_b)",
-    )
-
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_facts_processed ON facts(lexically_processed)",
-    )
-
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS blocks (
             block_id TEXT PRIMARY KEY,
@@ -97,17 +88,23 @@ def initialize_database():
             fact_ids TEXT NOT NULL
         )
     """)
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height)",
-    )
+
+    # --- Indexes (Correctly placed before commit) ---
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lexicon_word ON lexicon(word)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_synapse_a ON synapses(word_a)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_synapse_b ON synapses(word_b)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_facts_processed ON facts(lexically_processed)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height)")
+
 
     conn.commit()
     conn.close()
-    logger.info("\033[92m[Ledger] Database schema is up-to-date.\033[0m")
+    logger.info(f"\033[92m[Ledger] Database schema initialized/verified for {db_path}.\033[0m")
 
 
-def get_all_facts_for_analysis():
-    conn = sqlite3.connect(DB_NAME)
+def get_all_facts_for_analysis(db_path: str = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
+    """Fetches facts from the ledger."""
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
@@ -125,8 +122,9 @@ def insert_uncorroborated_fact(
     fact_content,
     source_url,
     adl_summary="",
+    db_path: str = DEFAULT_DB_PATH, # <-- ADDED db_path
 ):
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     timestamp = datetime.now(UTC).isoformat()
     compressed_content = zlib.compress(fact_content.encode("utf-8"))
@@ -137,7 +135,7 @@ def insert_uncorroborated_fact(
             VALUES (?, ?, ?, ?, 1, 'uncorroborated', ?)
         """,
             (fact_id, compressed_content, source_url, timestamp, adl_summary),
-        )  # Store the compressed blob
+        )
         conn.commit()
         return {
             "fact_id": fact_id,
@@ -154,6 +152,7 @@ def find_similar_fact_from_different_domain(
     fact_content,
     source_domain,
     all_facts,
+    db_path: str = DEFAULT_DB_PATH, # <-- Added db_path (though not strictly used here, good for consistency)
 ):
     content_start = fact_content[:60].lower()
     source_domain = source_domain.lower()
@@ -175,8 +174,8 @@ def find_similar_fact_from_different_domain(
     return None
 
 
-def update_fact_corroboration(fact_id, new_source_url):
-    conn = sqlite3.connect(DB_NAME)
+def update_fact_corroboration(fact_id, new_source_url, db_path: str = DEFAULT_DB_PATH): # <-- Added db_path
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -187,8 +186,6 @@ def update_fact_corroboration(fact_id, new_source_url):
         if not row:
             return
         original_url, existing_sources_str, current_score = row
-
-        # --- Ensure you handle the BLOB data correctly if reading it here later ---
 
         domains = {_domain_from_url(original_url)}
         if existing_sources_str:
@@ -222,8 +219,9 @@ def mark_facts_as_disputed(
     new_fact_id,
     new_fact_content,
     new_source_url,
+    db_path: str = DEFAULT_DB_PATH, # <-- Added db_path
 ):
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     timestamp = datetime.now(UTC).isoformat()
     try:
@@ -255,8 +253,8 @@ def mark_facts_as_disputed(
         conn.close()
 
 
-def insert_relationship(fact_id_1, fact_id_2, weight):
-    conn = sqlite3.connect(DB_NAME)
+def insert_relationship(fact_id_1, fact_id_2, weight, db_path: str = DEFAULT_DB_PATH): # <-- Added db_path
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     id1, id2 = (
         (fact_id_1, fact_id_2)
@@ -273,31 +271,27 @@ def insert_relationship(fact_id_1, fact_id_2, weight):
         conn.close()
 
 
-def get_unprocessed_facts_for_lexicon():
-    conn = sqlite3.connect(DB_NAME)
+def get_unprocessed_facts_for_lexicon(db_path: str = DEFAULT_DB_PATH): # <-- Added db_path
+    """Fetches facts that the brain hasn't learned from yet."""
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM facts WHERE lexically_processed = 0 AND status != 'disputed'",
-    )
+    cursor.execute("SELECT * FROM facts WHERE lexically_processed = 0 AND status != 'disputed'")
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return rows
 
 
-def mark_fact_as_processed(fact_id):
-    conn = sqlite3.connect(DB_NAME)
+def mark_fact_as_processed(fact_id, db_path: str = DEFAULT_DB_PATH): # <-- Added db_path
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE facts SET lexically_processed = 1 WHERE fact_id = ?",
-        (fact_id,),
-    )
+    cursor.execute("UPDATE facts SET lexically_processed = 1 WHERE fact_id = ?", (fact_id,))
     conn.commit()
     conn.close()
 
 
-def update_lexical_atom(word, pos):
-    conn = sqlite3.connect(DB_NAME)
+def update_lexical_atom(word, pos, db_path: str = DEFAULT_DB_PATH): # <-- Added db_path
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -311,8 +305,8 @@ def update_lexical_atom(word, pos):
     conn.close()
 
 
-def update_synapse(word_a, word_b, relation):
-    conn = sqlite3.connect(DB_NAME)
+def update_synapse(word_a, word_b, relation, db_path: str = DEFAULT_DB_PATH): # <-- Added db_path
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     w1, w2 = (word_a, word_b) if word_a < word_b else (word_b, word_a)
     cursor.execute(

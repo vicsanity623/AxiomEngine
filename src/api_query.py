@@ -3,30 +3,53 @@
 
 import logging
 import sqlite3
+import zlib # <-- NEW IMPORT for ZLIB decompression
+import json # <-- NEW IMPORT for JSON loading (needed for chain/fact metadata)
 
 logger = logging.getLogger(__name__)
-DB_NAME = "axiom_ledger.db"
 
+# DB_NAME removed. We rely on path argument.
 
 def search_ledger_for_api(
     search_term,
     include_uncorroborated=False,
     include_disputed=False,
+    db_path: str | None = None, # <-- NEW ARGUMENT
 ):
     """Searches the local SQLite ledger for facts containing the search term."""
     conn = None
+    if db_path is None: db_path = "axiom_ledger.db" # Fallback default path
+        
     try:
-        conn = sqlite3.connect(DB_NAME)
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        query = "SELECT * FROM facts WHERE fact_content LIKE ?"
+        
+        # We must select the content column explicitly in case it's a BLOB
+        query = "SELECT fact_id, fact_content, status, trust_score, source_url FROM facts WHERE fact_content LIKE ?"
         params = [f"%{search_term}%"]
         if not include_disputed:
             query += " AND status != 'disputed'"
         if not include_uncorroborated:
             query += " AND status = 'trusted'"
+            
         cursor.execute(query, params)
-        return [dict(row) for row in cursor.fetchall()]
+        
+        results = []
+        for row in cursor.fetchall():
+            r = dict(row)
+            # --- DECOMPRESS THE CONTENT FOR SEARCHING/RETURNING ---
+            try:
+                r['fact_content'] = zlib.decompress(r['fact_content']).decode('utf-8')
+                results.append(r)
+            except (TypeError, zlib.error):
+                logger.warning(f"[API Query] Could not decompress fact {r['fact_id'][:8]}. Skipping or keeping compressed.")
+                # If decompression fails, we skip it or return the raw blob depending on preference.
+                # For API calls, we should probably skip bad data.
+                continue
+                
+        return results
+        
     except sqlite3.Error as e:
         logger.error(f"[Ledger Query] Database error: {e}")
         return []
@@ -35,13 +58,13 @@ def search_ledger_for_api(
             conn.close()
 
 
-def query_lexical_mesh(search_term):
-    """NEW: Navigates the synapses of Axiom's brain.
-    Returns what Axiom 'understands' about a concept and its strongest associations.
-    """
+def query_lexical_mesh(search_term, db_path: str | None = None): # <-- NEW ARGUMENT
+    """NEW: Navigates the synapses of Axiom's brain."""
     conn = None
+    if db_path is None: db_path = "axiom_ledger.db"
+        
     try:
-        conn = sqlite3.connect(DB_NAME)
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 

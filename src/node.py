@@ -27,7 +27,6 @@ from src import (
 from src.api_query import query_lexical_mesh, search_ledger_for_api
 from src.axiom_logger import setup_logger
 from src.ledger import (
-    DB_NAME,
     get_unprocessed_facts_for_lexicon,
     initialize_database,
     mark_fact_as_processed,
@@ -104,8 +103,9 @@ class AxiomNode:
         self.investigation_queue = []
         self.active_proposals = {}
         self.thread_pool = ThreadPoolExecutor(max_workers=10)
+        self.db_path = os.environ.get("AXIOM_DB_PATH", "axiom_ledger.db")
 
-        initialize_database()
+        initialize_database(self.db_path)
         self.search_ledger_for_api = search_ledger_for_api
 
     def bootstrap_sync(self):
@@ -119,9 +119,13 @@ class AxiomNode:
         )
         for peer_url in list(self.peers.keys()):
             try:
-                sync_status, new_facts = sync_with_peer(self, peer_url)
+                sync_status, new_facts = sync_with_peer(
+                    self,
+                    peer_url,
+                    self.db_path,
+                )
                 self._update_reputation(peer_url, sync_status, len(new_facts))
-                sync_chain_with_peer(self, peer_url)
+                sync_chain_with_peer(self, peer_url, self.db_path)
             except:
                 pass
 
@@ -188,7 +192,11 @@ class AxiomNode:
         def immediate_handshake():
             time.sleep(2)
             try:
-                sync_status, new_facts = sync_with_peer(self, peer_url)
+                sync_status, new_facts = sync_with_peer(
+                    self,
+                    peer_url,
+                    self.db_path,
+                )
                 self._update_reputation(peer_url, sync_status, len(new_facts))
                 self.print_mesh_status()
             except:
@@ -259,7 +267,7 @@ class AxiomNode:
             logger.info("\033[2m[AXIOM ENGINE CYCLE START]\033[0m")
             newly_created_facts = []
             try:
-                topics = zeitgeist_engine.get_trending_topics(top_n=5)
+                topics = zeitgeist_engine.get_trending_topics(top_n=100)
                 if topics:
                     topic = topics[self._topic_rotation_index % len(topics)]
                     self._topic_rotation_index += 1
@@ -297,17 +305,21 @@ class AxiomNode:
 
             for peer_url in list(self.peers.keys()):
                 try:
-                    sync_status, new_facts = sync_with_peer(self, peer_url)
+                    sync_status, new_facts = sync_with_peer(
+                        self,
+                        peer_url,
+                        self.db_path,
+                    )
                     self._update_reputation(
                         peer_url,
                         sync_status,
                         len(new_facts),
                     )
-                    sync_chain_with_peer(self, peer_url)
+                    sync_chain_with_peer(self, peer_url, self.db_path)
                 except:
                     pass
             self._reflection_cycle()
-            metacognitive_engine.run_metacognitive_cycle()
+            metacognitive_engine.run_metacognitive_cycle(self.db_path)
             self._prune_ledger()
             self.print_mesh_status()
             time.sleep(900)
@@ -322,7 +334,8 @@ class AxiomNode:
             f"[Housekeeping] Pruning facts older than {PRUNE_THRESHOLD_DAYS} days...",
         )
 
-        conn = sqlite3.connect(DB_NAME)
+        # --- FIX: Use self.db_path instead of referencing undefined 'db_path' ---
+        conn = sqlite3.connect(self.db_path) 
         cursor = conn.cursor()
 
         cursor.execute(
@@ -365,17 +378,14 @@ def handle_local_query():
     include_uncorroborated = (
         request.args.get("include_uncorroborated", "false").lower() == "true"
     )
-    results = node_instance.search_ledger_for_api(
-        search_term,
-        include_uncorroborated=include_uncorroborated,
-    )
+    results = node_instance.search_ledger_for_api(search_term, include_uncorroborated=include_uncorroborated, db_path=node_instance.db_path) 
     return jsonify({"results": results})
 
 
 @app.route("/mesh_query", methods=["GET"])
 def handle_mesh_query():
     search_term = request.args.get("term", "")
-    data = query_lexical_mesh(search_term)
+    data = query_lexical_mesh(search_term, db_path=node_instance.db_path)
     return jsonify(data)
 
 
@@ -388,7 +398,7 @@ def handle_get_peers():
 @app.route("/get_chain_head", methods=["GET"])
 def handle_get_chain_head():
     _register_sync_caller()
-    head = get_chain_head()
+    head = get_chain_head(db_path=node_instance.db_path)
     if head is None:
         return jsonify({"block_id": None, "height": -1})
     block_id, height = head
@@ -402,14 +412,14 @@ def handle_get_blocks_after():
         height = int(request.args.get("height", -1))
     except (TypeError, ValueError):
         height = -1
-    blocks = get_blocks_after(height)
+    blocks = get_blocks_after(height, db_path=node_instance.db_path)
     return jsonify({"blocks": blocks})
 
 
 @app.route("/get_fact_ids", methods=["GET"])
 def handle_get_fact_ids():
     _register_sync_caller()
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(node_instance.db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT fact_id FROM facts")
     fact_ids = [row[0] for row in cursor.fetchall()]

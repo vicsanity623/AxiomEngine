@@ -4,11 +4,11 @@
 import hashlib
 import logging
 import sqlite3
-
+import zlib
+import json
 import requests
 
 from src.blockchain import append_block, get_chain_head, get_blocks_after
-from src.ledger import DB_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def verify_hash(content, fact_id):
     return calculated_hash == fact_id
 
 
-def sync_with_peer(node_instance, peer_url):
+def sync_with_peer(node_instance, peer_url, db_path: str):
     """Synchronizes the local ledger AND the peer list.
     Implements 'Gossip Discovery' to ensure the network loop remains intact.
     """
@@ -57,7 +57,8 @@ def sync_with_peer(node_instance, peer_url):
         response.raise_for_status()
         peer_fact_ids = set(response.json().get("fact_ids", []))
 
-        conn = sqlite3.connect(DB_NAME)
+        # USE THE PASSED db_path
+        conn = sqlite3.connect(db_path) 
         cursor = conn.cursor()
         cursor.execute("SELECT fact_id FROM facts")
         local_fact_ids = set(row[0] for row in cursor.fetchall())
@@ -115,7 +116,7 @@ def sync_with_peer(node_instance, peer_url):
                 """,
                     (
                         fact["fact_id"],
-                        fact["fact_content"],
+                        fact["fact_content"], # Assuming fact_content here is already the ZLIB BLOB from the peer
                         fact.get("source_url", "unknown_peer"),
                         fact.get("ingest_timestamp_utc"),
                         sanitized_trust,
@@ -131,9 +132,13 @@ def sync_with_peer(node_instance, peer_url):
 
         if facts_added_count > 0:
             logger.info(
-                f"Sync Success. Created {facts_added_count} new local records.",
+                f"\033[92m[P2P Sync] Sync success. Created {facts_added_count} new local records from {peer_url}.\033[0m",
             )
             return "SUCCESS_NEW_FACTS", new_facts_payload
+
+        logger.info(
+            f"\033[93m[P2P Sync] Completed with no new facts from {peer_url} (already up-to-date).\033[0m",
+        )
         return "SUCCESS_UP_TO_DATE", []
 
     except requests.exceptions.RequestException:
@@ -148,7 +153,7 @@ def sync_with_peer(node_instance, peer_url):
         return "SYNC_ERROR", []
 
 
-def sync_chain_with_peer(node_instance, peer_url):
+def sync_chain_with_peer(node_instance, peer_url, db_path: str):
     """
     Sync blockchain from peer: if peer has a longer chain, fetch new blocks and append.
     Returns (blocks_appended_count, peer_chain_height) for logging.
@@ -167,7 +172,9 @@ def sync_chain_with_peer(node_instance, peer_url):
         if peer_height < 0:
             return 0, peer_height
 
-        our_head = get_chain_head()
+        # Use the same db_path as the rest of this node so that
+        # chain height reflects the correct ledger file.
+        our_head = get_chain_head(db_path=db_path)
         if our_head is None:
             our_height = -1
         else:
@@ -189,7 +196,8 @@ def sync_chain_with_peer(node_instance, peer_url):
 
         appended = 0
         for blk in blocks:
-            if append_block(blk):
+            # Append blocks into this node's chain using the correct db_path.
+            if append_block(blk, db_path=db_path):
                 appended += 1
             else:
                 logger.warning(

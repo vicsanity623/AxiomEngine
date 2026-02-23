@@ -11,7 +11,6 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
-from src.ledger import DB_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +56,14 @@ def ensure_genesis(conn: sqlite3.Connection) -> None:
     logger.debug("[Chain] Genesis block created.")
 
 
-def get_chain_head(conn: sqlite3.Connection | None = None) -> tuple[str, int] | None:
+def get_chain_head(db_path: str | None = None, conn: sqlite3.Connection | None = None) -> tuple[str, int] | None:
     """Returns (block_id, height) of the current chain tip, or None if no chain."""
     own_conn = conn is None
-    if conn is None:
-        conn = sqlite3.connect(DB_NAME)
+    if db_path is None and conn is None:
+        # Fallback if called without context, should be avoided by node.py
+        db_path = "axiom_ledger.db" 
+        
+    conn = conn if conn else sqlite3.connect(db_path)
     try:
         ensure_genesis(conn)
         cursor = conn.cursor()
@@ -77,17 +79,19 @@ def get_chain_head(conn: sqlite3.Connection | None = None) -> tuple[str, int] | 
             conn.close()
 
 
-def create_block(fact_ids: list[str], conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def create_block(fact_ids: list[str], db_path: str | None = None, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
     """
     Create a new block extending the current head. fact_ids should be a list of fact_ids
     to commit in this block. Returns the new block dict or None if creation failed.
     """
     own_conn = conn is None
-    if conn is None:
-        conn = sqlite3.connect(DB_NAME)
+    if db_path is None and conn is None:
+        db_path = "axiom_ledger.db"
+        
+    conn = conn if conn else sqlite3.connect(db_path)
     try:
         ensure_genesis(conn)
-        head = get_chain_head(conn)
+        head = get_chain_head(db_path=db_path, conn=conn) # Pass connection context
         if head is None:
             return None
         previous_block_id, height = head
@@ -138,17 +142,19 @@ def validate_block(
     return True
 
 
-def append_block(block: dict[str, Any], conn: sqlite3.Connection | None = None) -> bool:
+def append_block(block: dict[str, Any], db_path: str | None = None, conn: sqlite3.Connection | None = None) -> bool:
     """
     Append a validated block to the chain. Caller must ensure it extends current head.
     Returns True if appended, False if invalid or duplicate.
     """
     own_conn = conn is None
-    if conn is None:
-        conn = sqlite3.connect(DB_NAME)
+    if db_path is None and conn is None:
+        db_path = "axiom_ledger.db"
+        
+    conn = conn if conn else sqlite3.connect(db_path)
     try:
         ensure_genesis(conn)
-        head = get_chain_head(conn)
+        head = get_chain_head(db_path=db_path, conn=conn) # Pass connection context
         if head is None:
             return False
         prev_id, prev_height = head
@@ -187,11 +193,13 @@ def append_block(block: dict[str, Any], conn: sqlite3.Connection | None = None) 
             conn.close()
 
 
-def get_blocks_after(height: int, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def get_blocks_after(height: int, db_path: str | None = None, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
     """Return blocks with height > height, ordered by height ascending."""
     own_conn = conn is None
-    if conn is None:
-        conn = sqlite3.connect(DB_NAME)
+    if db_path is None and conn is None:
+        db_path = "axiom_ledger.db"
+        
+    conn = conn if conn else sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -214,11 +222,13 @@ def get_blocks_after(height: int, conn: sqlite3.Connection | None = None) -> lis
             conn.close()
 
 
-def get_block_by_id(block_id: str, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
+def get_block_by_id(block_id: str, db_path: str | None = None, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
     """Fetch a single block by id."""
     own_conn = conn is None
-    if conn is None:
-        conn = sqlite3.connect(DB_NAME)
+    if db_path is None and conn is None:
+        db_path = "axiom_ledger.db"
+        
+    conn = conn if conn else sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute(

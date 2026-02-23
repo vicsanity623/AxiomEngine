@@ -2,14 +2,13 @@
 # Copyright (C) 2026 The Axiom Contributors
 
 import sqlite3
+from typing import Any # Added for type hinting consistency
 
-DB_NAME = "axiom_ledger.db"
+# DB_NAME removed. All functions now require db_path.
 
 
-def load_facts_and_relationships(db_path=DB_NAME):
-    """Loads facts and relationships from the ledger.
-    Updated to include source_url for the visualizer modal.
-    """
+def load_facts_and_relationships(db_path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Loads facts and relationships from the ledger."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -29,7 +28,7 @@ def load_facts_and_relationships(db_path=DB_NAME):
     return facts, relationships
 
 
-def load_brain_synapses(db_path=DB_NAME, min_strength=2):
+def load_brain_synapses(db_path: str, min_strength=2) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """NEW: Fetches atoms and synapses for brain visualization."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -51,10 +50,8 @@ def load_brain_synapses(db_path=DB_NAME, min_strength=2):
     return atoms, synapses
 
 
-def to_json_for_viz(db_path=DB_NAME, include_sources=True, topic_filter=None):
-    """Exports ledger facts and edges to JSON.
-    Removed character truncation to allow for full-fact readability in HUD.
-    """
+def to_json_for_viz(db_path: str, include_sources=True, topic_filter=None):
+    """Exports ledger facts and edges to JSON."""
     facts, relationships = load_facts_and_relationships(db_path)
     if topic_filter:
         topic_lower = topic_filter.lower()
@@ -101,7 +98,7 @@ def to_json_for_viz(db_path=DB_NAME, include_sources=True, topic_filter=None):
     return {"nodes": nodes, "edges": edges}
 
 
-def to_json_for_brain_viz(db_path=DB_NAME):
+def to_json_for_brain_viz(db_path: str):
     """NEW: Formats the Lexical Mesh for PyVis."""
     atoms, synapses = load_brain_synapses(db_path)
     nodes = [

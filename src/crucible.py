@@ -202,30 +202,29 @@ def _check_for_contradiction(new_doc, all_existing_facts):
 
 
 def extract_facts_from_text(source_url, text_content):
-    """Main processing pipeline.
+    """
+    Main processing pipeline.
     1. Sanitize
     2. Split into sentences
     3. Filter for Grammar & Entities
     4. Check Ledger
-    5. Save
+    5. Save (Compressed BLOB + ADL Summary)
     """
-    logger.info(
-        f"\033[2m--- [The Crucible] Analyzing content from {source_url[:50]}... ---\033[0m",
-    )
-
+    logger.info(f"\033[2m--- [The Crucible] Analyzing content from {source_url[:50]}... ---\033[0m")
+    
     text_content = _sanitize_text(text_content)
     doc = NLP_MODEL(text_content)
-
+    
     all_facts_in_ledger = get_all_facts_for_analysis()
     newly_created_facts = []
     contradictions = 0
-
+    
     for sent in doc.sents:
         raw_sent = sent.text.strip()
-
+        
         if len(raw_sent) < 25 or len(raw_sent) > 400:
             continue
-
+            
         if any(word in raw_sent.lower() for word in SUBJECTIVITY_INDICATORS):
             continue
 
@@ -233,10 +232,10 @@ def extract_facts_from_text(source_url, text_content):
             continue
 
         sent_doc = NLP_MODEL(raw_sent)
-
+        
         if not _is_valid_grammatical_sentence(sent_doc):
             continue
-
+            
         if not _contains_named_entity(sent_doc):
             continue
 
@@ -253,7 +252,7 @@ def extract_facts_from_text(source_url, text_content):
             )
             contradictions += 1
             continue
-
+            
         domain = re.search(r"https?://(?:www\.)?([^/]+)", source_url).group(1)
         similar_fact = find_similar_fact_from_different_domain(
             raw_sent,
@@ -264,23 +263,24 @@ def extract_facts_from_text(source_url, text_content):
         if similar_fact:
             update_fact_corroboration(similar_fact["fact_id"], source_url)
             continue
-
+            
         fact_id = hashlib.sha256(raw_sent.encode("utf-8")).hexdigest()
-        result = insert_uncorroborated_fact(fact_id, raw_sent, source_url)
-        if result:
-            newly_created_facts.append(result)
-
+        
+        # --- GENERATE ADL ---
         adl_summary = _generate_adl_summary(sent_doc)
-
-        result = insert_uncorroborated_fact(fact_id, raw_sent, source_url)
+        
+        # --- CORRECTED: Call insert_uncorroborated_fact ONCE with all data ---
+        result = insert_uncorroborated_fact(
+            fact_id, 
+            raw_sent, 
+            source_url, 
+            adl_summary=adl_summary # <-- ADL is now correctly passed
+        )
+        
         if result:
-            # NOTE: We need a separate function to save the ADL summary,
-            # as insert_uncorroborated_fact does not currently accept it.
-            # For now, we'll log it, but the saving mechanism needs modification in ledger.py.
             logger.info(
                 f"[ADL TEMP] Generated ADL for new fact {fact_id[:8]}: {adl_summary}",
             )
-
             newly_created_facts.append(result)
 
     if contradictions > 0:

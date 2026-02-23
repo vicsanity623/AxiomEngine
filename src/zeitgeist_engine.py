@@ -34,7 +34,7 @@ IGNORED_ENTITIES = {
 }
 
 
-def get_trending_topics(top_n=5):
+def get_trending_topics(top_n=100):
     """Identifies trending topics using Named Entity Recognition (NER) on RSS headlines.
     Filters out noise to find substantial subjects.
     """

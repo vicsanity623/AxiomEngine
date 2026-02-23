@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # Axiom - view_ledger.py
 # Copyright (C) 2026 The Axiom Contributors
-
+# --- V3.4: DYNAMIC DB PATHING FOR INSPECTION UTILITY ---
 
 import argparse
 import zlib
 import sqlite3
+import sys
+import os # Added import to check for environment variables
 
-DB_NAME = "axiom_ledger.db"
+# Removed DB_NAME global constant
 
 CYAN = "\033[96m"
 GREEN = "\033[92m"
@@ -21,8 +23,8 @@ def print_header(text):
     print(f"\n{CYAN}=== {text} ==={RESET}")
 
 
-def print_stats():
-    conn = sqlite3.connect(DB_NAME)
+def print_stats(db_path: str):
+    conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
     try:
@@ -66,8 +68,8 @@ def print_stats():
         conn.close()
 
 
-def print_brain(limit=15):
-    conn = sqlite3.connect(DB_NAME)
+def print_brain(db_path: str, limit=15): # <-- Added db_path
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
@@ -109,8 +111,8 @@ def print_brain(limit=15):
         conn.close()
 
 
-def print_facts(limit=20):
-    conn = sqlite3.connect(DB_NAME)
+def print_facts(db_path: str, limit=20): # <-- Added db_path
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
@@ -133,7 +135,6 @@ def print_facts(limit=20):
             # The content is now a compressed BLOB (bytes) from ledger.py
             fact_content = zlib.decompress(r['fact_content']).decode('utf-8')
         except (TypeError, zlib.error):
-            # Fallback if decompression fails (e.g., it's an old non-compressed record)
             fact_content = f"ERROR: Could not decompress fact content (ID: {r['fact_id'][:8]})."
             
         # Indicator for brain processing
@@ -171,13 +172,21 @@ if __name__ == "__main__":
         default=10,
         help="Number of items to show",
     )
+    # --- NEW: ADD ARGUMENT FOR DB PATH ---
+    parser.add_argument(
+        "--db",
+        type=str,
+        default=os.environ.get("AXIOM_DB_PATH", "axiom_ledger.db"),
+        help="Specify the path to the ledger.db file to inspect.",
+    )
+    
     args = parser.parse_args()
 
     if args.stats:
-        print_stats()
+        print_stats(args.db) # Pass DB path
     elif args.brain:
-        print_stats()
-        print_brain(args.limit)
+        print_stats(args.db) # Pass DB path
+        print_brain(args.db, args.limit) # Pass DB path
     else:
-        print_stats()
-        print_facts(args.limit)
+        print_stats(args.db) # Pass DB path
+        print_facts(args.db, args.limit) # Pass DB path

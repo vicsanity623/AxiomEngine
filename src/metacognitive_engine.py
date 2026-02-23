@@ -3,6 +3,7 @@
 
 import logging
 import sqlite3
+import zlib
 from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ ADL_INTEGRITY_THRESHOLD = (
 TRUST_SCORE_FOR_PRUNING = 2  # Only prune facts with a trust score of 1
 
 
-def run_metacognitive_cycle():
+def run_metacognitive_cycle(db_path: str = DB_NAME):
     """Runs high-level, slow checks that govern the long-term health and efficiency
     of the Lexical Mesh and the Fact Ledger.
     """
@@ -24,7 +25,7 @@ def run_metacognitive_cycle():
     )
 
     # 1. ADL Integrity Check & Pruning
-    prune_integrity_check()
+    prune_integrity_check(db_path)
 
     # 2. Synapse Weight Refinement (Future: Use ADL to re-weight synapses if needed)
     logger.info(
@@ -32,12 +33,12 @@ def run_metacognitive_cycle():
     )
 
 
-def prune_integrity_check():
+def prune_integrity_check(db_path: str):
     """Examines the ledger for facts that are too structurally shallow (weak ADL)
     or too old without corroboration, preparing them for potential deletion.
     """
     PRUNE_THRESHOLD_DAYS = 90
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
