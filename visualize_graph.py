@@ -2,25 +2,28 @@
 # Copyright (C) 2026 The Axiom Contributors
 
 import argparse
-import sys
-import os
 import json
 
 DB_NAME = "axiom_ledger.db"
 
+
 def get_node_colors(status, is_brain):
     """Returns raw hex colors for the JS Canvas Renderer."""
-    if is_brain: return "#ff00ff"
-    if status == "trusted": return "#22c55e"
-    elif status == "disputed": return "#ff0055"
+    if is_brain:
+        return "#ff00ff"
+    if status == "trusted":
+        return "#22c55e"
+    if status == "disputed":
+        return "#ff0055"
     return "#00f0ff"
+
 
 def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
     """Injects the 3D Math, Plasma Engine, and SOTA HUD Modal into the specific file."""
-    with open(filepath, 'r', encoding='utf-8') as file:
+    with open(filepath, encoding="utf-8") as file:
         html = file.read()
 
-    html = html.replace('background-color: #ffffff;', '')
+    html = html.replace("background-color: #ffffff;", "")
 
     cyberpunk_css = """
     <style>
@@ -66,7 +69,7 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
     </style>
     </head>
     """
-    html = html.replace('</head>', cyberpunk_css)
+    html = html.replace("</head>", cyberpunk_css)
 
     engine_js = f"""
     <div id="hud">
@@ -181,63 +184,94 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
     </script>
     </body>
     """
-    html = html.replace('</body>', engine_js)
-    with open(filepath, 'w', encoding='utf-8') as file:
+    html = html.replace("</body>", engine_js)
+    with open(filepath, "w", encoding="utf-8") as file:
         file.write(html)
+
 
 def build_pyvis_html(out_path, data, mode_label, is_brain):
     from pyvis.network import Network
-    
-    nodes, edges = data['nodes'], data['edges']
-    if not nodes: return
+
+    nodes, edges = data["nodes"], data["edges"]
+    if not nodes:
+        return
 
     node_data_dict = {}
     added_node_ids = set()
-    
+
     for n in nodes:
-        added_node_ids.add(n['id'])
-        z = 200 if is_brain else (0 if n.get('status') == 'trusted' else -200)
-        node_data_dict[n['id']] = {
-            "content": n.get('label', n.get('full_content', '')),
-            "status": n.get('status', 'brain' if is_brain else 'uncorroborated'),
-            "value": n['value'],
-            "source": n.get('source_url', ''),
+        added_node_ids.add(n["id"])
+        z = 200 if is_brain else (0 if n.get("status") == "trusted" else -200)
+        node_data_dict[n["id"]] = {
+            "content": n.get("label", n.get("full_content", "")),
+            "status": n.get(
+                "status",
+                "brain" if is_brain else "uncorroborated",
+            ),
+            "value": n["value"],
+            "source": n.get("source_url", ""),
             "is_brain": is_brain,
-            "color": get_node_colors(n.get('status', ''), is_brain),
-            "z": z
+            "color": get_node_colors(n.get("status", ""), is_brain),
+            "z": z,
         }
 
     net = Network(height="100vh", width="100%", bgcolor="#000000")
     vis_options = {
-        "nodes": { "color": "rgba(0,0,0,0)", "font": { "size": 0 }, "borderWidth": 0, "shadow": { "enabled": False } },
-        "edges": { "color": "rgba(0,0,0,0)", "shadow": { "enabled": False } },
-        "physics": { "solver": "forceAtlas2Based", "forceAtlas2Based": { "gravitationalConstant": -150, "centralGravity": 0.02, "springLength": 200, "springConstant": 0.05, "damping": 0.6, "avoidOverlap": 0.5 }, "stabilization": { "enabled": True, "iterations": 150 } },
-        "interaction": { "hover": False, "dragNodes": True, "selectable": True }
+        "nodes": {
+            "color": "rgba(0,0,0,0)",
+            "font": {"size": 0},
+            "borderWidth": 0,
+            "shadow": {"enabled": False},
+        },
+        "edges": {"color": "rgba(0,0,0,0)", "shadow": {"enabled": False}},
+        "physics": {
+            "solver": "forceAtlas2Based",
+            "forceAtlas2Based": {
+                "gravitationalConstant": -150,
+                "centralGravity": 0.02,
+                "springLength": 200,
+                "springConstant": 0.05,
+                "damping": 0.6,
+                "avoidOverlap": 0.5,
+            },
+            "stabilization": {"enabled": True, "iterations": 150},
+        },
+        "interaction": {"hover": False, "dragNodes": True, "selectable": True},
     }
     net.set_options(json.dumps(vis_options))
-    
-    for n in nodes: 
-        net.add_node(n['id'], label=" ", value=n['value'], size=25)
-    
-    for e in edges: 
-        if e['from'] in added_node_ids and e['to'] in added_node_ids:
-            net.add_edge(e['from'], e['to'], value=e['value'])
+
+    for n in nodes:
+        net.add_node(n["id"], label=" ", value=n["value"], size=25)
+
+    for e in edges:
+        if e["from"] in added_node_ids and e["to"] in added_node_ids:
+            net.add_edge(e["from"], e["to"], value=e["value"])
 
     net.save_graph(out_path)
-    inject_sota_engine(out_path, len(nodes), json.dumps(node_data_dict), mode_label)
+    inject_sota_engine(
+        out_path,
+        len(nodes),
+        json.dumps(node_data_dict),
+        mode_label,
+    )
+
 
 if __name__ == "__main__":
     import graph_export
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--topic", help="Filter ledger graph by topic")
     args = parser.parse_args()
 
-    print(f"Generating Ledger HUD: axiom_graph.html")
-    ledger_data = graph_export.to_json_for_viz(DB_NAME, topic_filter=args.topic)
+    print("Generating Ledger HUD: axiom_graph.html")
+    ledger_data = graph_export.to_json_for_viz(
+        DB_NAME,
+        topic_filter=args.topic,
+    )
     build_pyvis_html("axiom_graph.html", ledger_data, "FACT_LEDGER", False)
 
-    print(f"Generating Brain HUD: axiom_brain.html")
+    print("Generating Brain HUD: axiom_brain.html")
     brain_data = graph_export.to_json_for_brain_viz(DB_NAME)
     build_pyvis_html("axiom_brain.html", brain_data, "LEXICAL_MESH", True)
 
-    print(f"\033[92mSuccess: Dual Sovereign HUDs generated.\033[0m")
+    print("\033[92mSuccess: Dual Sovereign HUDs generated.\033[0m")

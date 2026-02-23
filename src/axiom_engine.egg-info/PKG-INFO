@@ -1,3 +1,47 @@
+Metadata-Version: 2.4
+Name: axiom-engine
+Version: 0.2.0
+Summary: A decentralized, deterministic knowledge engine based on a Lexical Mesh.
+Author-email: Vic <victronevarez88@gmail.com>
+License: MIT
+Keywords: ai,p2p,truth,blockchain
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Topic :: Internet
+Classifier: Operating System :: OS Independent
+Classifier: Typing :: Typed
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: Flask>=3.0.0
+Requires-Dist: flask-cors>=4.0.0
+Requires-Dist: gunicorn>=22.0.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: feedparser>=6.0.11
+Requires-Dist: trafilatura>=1.12.0
+Requires-Dist: beautifulsoup4>=4.12.3
+Requires-Dist: lxml>=5.2.0
+Requires-Dist: spacy>=3.7.5
+Requires-Dist: networkx>=3.2.0
+Requires-Dist: pyvis>=0.3.2
+Requires-Dist: pyinstaller>=6.10.0
+Provides-Extra: tests
+Requires-Dist: pytest>=8.0.0; extra == "tests"
+Requires-Dist: pytest-cov>=4.1.0; extra == "tests"
+Provides-Extra: tools
+Requires-Dist: attrs>=24.0.0; extra == "tools"
+Requires-Dist: mypy>=1.0.0; extra == "tools"
+Requires-Dist: ruff>=0.8.0; extra == "tools"
+Dynamic: license-file
+
 # Axiom: The Decentralized Grounding Engine ◈
 
 <div align="center">

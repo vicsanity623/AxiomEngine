@@ -20,15 +20,14 @@ jobs:
     
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
-        pip install pyinstaller pyvis networkx
+        uv pip install -e .[tools,tests]
         
     - name: Download SpaCy Model (CRITICAL FIX)
       run: python -m spacy download en_core_web_sm # <-- ADD THIS LINE
         
     - name: Verify Lexical Mesh Integrity (Test)
       run: |
-        python view_ledger.py --stats
+        python view_ledger.py
         
     - name: Build Standalone (Optional, but good test)
       run: python build_standalone.py

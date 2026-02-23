@@ -14,7 +14,7 @@ You don't need to be a kernel developer to help ground reality. We value all for
 | :--- | :--- | :--- |
 | 🛡️ **The Operator** | **Node Runner** | Run a stable node and enable your Funnel to strengthen the network. |
 | 🔍 **The Auditor** | **Logic Auditor** | Identify "logical hallucinations" in the Lexical Mesh or Crucible filters. |
-| 🏗️ **The Architect** | **Developer** | Refine the deterministic Python engine or the mobile terminal UI. |
+| 🏗️ **The Architect** | **Developer** | Refine the deterministic Python engine or the SOTA visualizer UI. |
 | ✍️ **The Scribe** | **Documentation**| Improve the clarity of the Lexical Mesh technical specifications. |
 
 ---
@@ -22,18 +22,22 @@ You don't need to be a kernel developer to help ground reality. We value all for
 ## ◈ Quick Start: Development Setup
 
 ### 1. Prerequisites
-Ensure you have **Python 3.13+** installed. We also recommend using a virtual environment (`venv`).
+Ensure you have **Python 3.13+** installed. We use `uv` for fast dependency management.
 
-### 2. Clone & Install
+### 2. Clone & Environment Setup
 ```bash
-# Fork the repo on GitHub, then clone your fork:
+# Clone your fork:
 git clone https://github.com/vicsanity623/AxiomEngine.git
 cd AxiomEngine
 
-# Install hardened dependencies
-pip install -r requirements.txt
+# 1. Create a dedicated, clean environment using uv
+uv venv --python 3.13
+source .venv/bin/activate
 
-# Download the Analytical AI model (The Lexical Mesh's foundation)
+# 2. Install dependencies (Runtime + Development Tools)
+uv pip install -e .[tools,tests]
+
+# 3. Download the Analytical AI model (The Lexical Mesh's foundation)
 python -m spacy download en_core_web_sm
 ```
 
@@ -45,7 +49,7 @@ You can run multiple nodes on a single machine to test P2P synchronization and L
 **Node A (The Bootstrap):**
 ```bash
 export PORT=8009
-python node.py
+python src/node.py
 ```
 
 **Node B (The Peer):**
@@ -53,9 +57,9 @@ Open a new terminal tab:
 ```bash
 export PORT=8010
 export BOOTSTRAP_PEER=http://127.0.0.1:8009
-python node.py
+python src/node.py
 ```
-*Your nodes will now begin a bidirectional sync. You can verify the brain's growth using `python view_ledger.py --brain`.*
+*Your nodes will now begin a bidirectional sync. Verify the graph and mesh growth using `python src/view_ledger.py --brain`.*
 
 ---
 
@@ -71,11 +75,11 @@ Never work directly on `main`. Create a descriptive feature branch:
 We use the [Conventional Commits](https://www.conventionalcommits.org/) standard to keep the progress ledger clean:
 - `feat(Crucible): add specific entity weight for LAW tags`
 - `fix(P2P): deduplicate local vs public node identities`
-- `chore: update requirements.txt for python 3.13`
+- `chore: update pyproject.toml for Python 3.13`
 
 ### 3. Pull Requests (PRs)
 When you are ready, submit a PR against the `main` branch. 
-- **Deterministic Check:** Ensure your code does not add probabilistic "guessing" or external API dependencies.
+- **Deterministic Check:** Ensure your code does not add probabilistic "guessing" or external API dependencies unless part of an approved module.
 - **Visuals:** If you updated the terminal UI or the Lexical Mesh visualizer, include a screenshot!
 
 ---
@@ -93,3 +97,13 @@ The Axiom collective coordinates through these primary channels:
 By contributing to Axiom, you agree that your contributions will be licensed under the **Peer Production License (PPL)**. This ensures that our collective work remains a non-commercial public utility forever.
 
 **Thank you for defending the bedrock of reality. ◈**
+```
+
+### Key Changes:
+
+1.  **Environment Setup:** Changed `pip install -e .` to the modern `uv` command: **`uv pip install -e .[tools,tests]`**.
+2.  **Model Download:** Kept the essential `python -m spacy download en_core_web_sm` command, as models are often external to the package install.
+3.  **Launch Protocol:** Changed the launch command to use the correct path structure: **`python src/node.py`**.
+4.  **Inspection:** Changed the inspection command to reflect the new path: **`python src/view_ledger.py`**.
+
+This documentation now accurately reflects the advanced, modern toolchain you are using!

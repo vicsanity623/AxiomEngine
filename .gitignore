@@ -2,6 +2,7 @@
 dist/
 build/
 *.spec
+/axiom_engine.egg-info
 
 # Local Database
 *.db
@@ -15,6 +16,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.python-version
 
 # --- IDE / Editor specific files ---
 .vscode/
