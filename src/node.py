@@ -445,7 +445,7 @@ def handle_thinking():
     if not query:
         return jsonify({"response": "System standby. Awaiting input."})
 
-    answer = inference_engine.think(query)
+    answer = inference_engine.think(query, db_path=node_instance.db_path)
     return jsonify({"response": answer})
 
 
