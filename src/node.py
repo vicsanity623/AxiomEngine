@@ -8,6 +8,7 @@ import random
 import sqlite3
 import threading
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
@@ -26,6 +27,16 @@ from src import (
 )
 from src.api_query import query_lexical_mesh, search_ledger_for_api
 from src.axiom_logger import setup_logger
+from src.conversation_patterns import (
+    ConversationPattern,
+    compile_patterns,
+    match_query,
+    seed_patterns,
+)
+from src.code_introspector import build_endpoint_registry, build_module_map
+from src.data_quality import find_conflict_candidates, find_duplicate_candidates
+from src.system_health import compute_health_snapshot
+from src.self_check import run_self_checks
 from src.ledger import (
     get_unprocessed_facts_for_lexicon,
     initialize_database,
@@ -103,10 +114,52 @@ class AxiomNode:
         self.investigation_queue = []
         self.active_proposals = {}
         self.thread_pool = ThreadPoolExecutor(max_workers=10)
-        self.db_path = os.environ.get("AXIOM_DB_PATH", "axiom_ledger.db")
+
+        # Scheduler configuration for main cycles and idle ticks.
+        self.main_cycle_interval = int(
+            os.environ.get("AXIOM_MAIN_CYCLE_INTERVAL", "900")
+        )
+        self.idle_tick_interval = float(
+            os.environ.get("AXIOM_IDLE_TICK_INTERVAL", "1.0")
+        )
+
+        # Idle task registry state.
+        self.idle_tasks = []
+        self._idle_task_index = 0
+        self._last_idle_learning_ts = 0.0
+
+        # Conversation subsystem (populated during idle training).
+        self._conversation_patterns = []
+        self._conversation_training_state = {}
+        # Code introspection and health snapshots.
+        self._code_map = None
+        self._endpoint_registry = []
+        self._last_code_introspection_ts = 0.0
+        self._duplicate_summary = []
+        self._conflict_summary = []
+        self._last_data_quality_ts = 0.0
+        self._health_snapshot = None
+        self._last_health_snapshot_ts = 0.0
+        self._self_check_results = []
+        self._last_self_check_ts = 0.0
+        if port == 8009:
+            # Bootstrap node must always use the canonical database name
+            self.db_path = os.environ.get("AXIOM_DB_PATH", "axiom_ledger.db")
+        else:
+            # Peer node uses port-specific name if no ENV var is set
+            default_db_name = f"axiom_ledger_{port}.db"
+            self.db_path = os.environ.get("AXIOM_DB_PATH", default_db_name)
 
         initialize_database(self.db_path)
         self.search_ledger_for_api = search_ledger_for_api
+
+        # Register built-in idle tasks.
+        self.idle_tasks.append(self._idle_learning_cycle)
+        self.idle_tasks.append(self._idle_conversation_training)
+        self.idle_tasks.append(self._idle_code_introspection)
+        self.idle_tasks.append(self._idle_data_quality)
+        self.idle_tasks.append(self._idle_health_snapshot)
+        self.idle_tasks.append(self._idle_self_checks)
 
     def bootstrap_sync(self):
         if not self.peers:
@@ -117,6 +170,7 @@ class AxiomNode:
         logger.info(
             "\033[93m[Init] Performing initial sync with bootstrap peers...\033[0m",
         )
+        chain_updated = False
         for peer_url in list(self.peers.keys()):
             try:
                 sync_status, new_facts = sync_with_peer(
@@ -125,13 +179,18 @@ class AxiomNode:
                     self.db_path,
                 )
                 self._update_reputation(peer_url, sync_status, len(new_facts))
-                sync_chain_with_peer(self, peer_url, self.db_path)
+                
+                # Check chain sync result
+                appended, peer_height = sync_chain_with_peer(self, peer_url, self.db_path)
+                if appended > 0 or (peer_height > get_chain_head(self.db_path)[1]):
+                    chain_updated = True
             except:
                 pass
+        return chain_updated
 
-    def print_mesh_status(self):
+    def print_mesh_status(self, force: bool = False):
         now = time.time()
-        if now - self._last_mesh_print < 5:
+        if not force and now - self._last_mesh_print < 5:
             return
         self._last_mesh_print = now
         print()
@@ -244,7 +303,7 @@ class AxiomNode:
         logger.info(
             "\033[95m[Reflection] Starting Lexical Mesh integration... ---\033[0m",
         )
-        unprocessed_facts = get_unprocessed_facts_for_lexicon()
+        unprocessed_facts = get_unprocessed_facts_for_lexicon(self.db_path)
         if not unprocessed_facts:
             logger.info("Success: Lexical Mesh is up to date.")
             return
@@ -253,76 +312,342 @@ class AxiomNode:
         )
         for fact in unprocessed_facts:
             try:
-                if crucible.integrate_fact_to_mesh(fact["fact_content"]):
-                    mark_fact_as_processed(fact["fact_id"])
-            except:
+                raw = fact.get("fact_content")
+                text = raw
+                if isinstance(raw, (bytes, bytearray)):
+                    try:
+                        text = zlib.decompress(raw).decode("utf-8")
+                    except (zlib.error, ValueError):
+                        continue
+                if crucible.integrate_fact_to_mesh(text):
+                    mark_fact_as_processed(fact["fact_id"], self.db_path)
+            except Exception:
                 pass
         logger.info(
             "Success: Neural pathways strengthened. Idle cycle complete.",
         )
 
+    def _idle_learning_cycle(self):
+        """Productive tasks between main cycles: rediscover links, reinforce synapses."""
+        try:
+            # Throttle heavy idle learning so it does not run on every tick.
+            now = time.time()
+            if now - self._last_idle_learning_ts < 300:
+                return
+
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT fact_id, fact_content, trust_score, status FROM facts WHERE status != 'disputed' ORDER BY RANDOM() LIMIT 30"
+            )
+            rows = cur.fetchall()
+            conn.close()
+            if not rows:
+                return
+            sample = []
+            for row in rows:
+                raw = row["fact_content"]
+                try:
+                    text = zlib.decompress(raw).decode("utf-8") if isinstance(raw, (bytes, bytearray)) else (raw or "")
+                except (zlib.error, ValueError, TypeError):
+                    continue
+                if text:
+                    sample.append({"fact_id": row["fact_id"], "fact_content": text})
+            if sample:
+                logger.info(
+                    "\033[2m[Idle] Relationship rediscovery: re-linking %d facts against full ledger...\033[0m",
+                    len(sample),
+                )
+                synthesizer.link_related_facts(sample, db_path=self.db_path)
+            # Reinforce synapses: re-integrate a few high-trust facts into the mesh
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT fact_id, fact_content FROM facts WHERE status != 'disputed' AND (trust_score >= 2 OR status = 'trusted') ORDER BY RANDOM() LIMIT 5"
+            )
+            reinforce_rows = cur.fetchall()
+            conn.close()
+            reinforced = 0
+            for row in reinforce_rows:
+                raw = row[1]
+                try:
+                    text = zlib.decompress(raw).decode("utf-8") if isinstance(raw, (bytes, bytearray)) else (raw or "")
+                except (zlib.error, ValueError, TypeError):
+                    continue
+                if text and crucible.integrate_fact_to_mesh(text):
+                    reinforced += 1
+            if reinforced:
+                logger.info(
+                    "\033[2m[Idle] Synapse reinforcement: re-integrated %d high-trust fact(s) into mesh.\033[0m",
+                    reinforced,
+                )
+            # Only mark as run if we reached the end without early return.
+            self._last_idle_learning_ts = now
+        except Exception as e:
+            logger.info("[Idle] Learning cycle skipped: %s", e)
+
+    def _run_main_cycle(self):
+        """One full main cycle: fetch topics, integrate facts, sync peers, and housekeeping."""
+        logger.info("\033[2m[AXIOM ENGINE CYCLE START]\033[0m")
+        newly_created_facts = []
+        try:
+            topics = zeitgeist_engine.get_trending_topics(top_n=100)
+            if topics:
+                topic = topics[self._topic_rotation_index % len(topics)]
+                self._topic_rotation_index += 1
+                logger.info(
+                    f"\033[96mSelected topic for this cycle: {topic}\033[0m",
+                )
+                content_list = universal_extractor.find_and_extract(
+                    topic,
+                    max_sources=3,
+                )
+                for item in content_list:
+                    new_facts = crucible.extract_facts_from_text(
+                        item["source_url"],
+                        item["content"],
+                    )
+                    if new_facts:
+                        newly_created_facts.extend(new_facts)
+                if newly_created_facts:
+                    synthesizer.link_related_facts(
+                        newly_created_facts,
+                        db_path=self.db_path,
+                    )
+        except Exception as e:
+            logger.error(f"Error: {e}")
+
+        logger.info("\033[2m[AXIOM ENGINE CYCLE FINISH]\033[0m")
+
+        if newly_created_facts:
+            fact_ids = [f["fact_id"] for f in newly_created_facts]
+
+            # Ensure blocks are written to this node's active ledger file.
+            new_block = create_block(fact_ids, db_path=self.db_path)
+
+            if new_block:
+                logger.info(
+                    f"\033[96m[Chain] Committed block HEIGHT {new_block['height']} with {len(fact_ids)} fact(s).\033[0m",
+                )
+            else:
+                logger.warning(
+                    f"[Chain] Failed to commit block for {len(fact_ids)} facts. Check for race condition or duplicate ID.",
+                )
+
+        for peer_url in list(self.peers.keys()):
+            try:
+                sync_status, new_facts = sync_with_peer(
+                    self,
+                    peer_url,
+                    self.db_path,
+                )
+                self._update_reputation(
+                    peer_url,
+                    sync_status,
+                    len(new_facts),
+                )
+                sync_chain_with_peer(self, peer_url, self.db_path)
+            except Exception:
+                pass
+
+        self._reflection_cycle()
+        metacognitive_engine.run_metacognitive_cycle(self.db_path)
+        self._prune_ledger()
+        self.print_mesh_status(force=True)
+
+    def _idle_conversation_training(self):
+        """
+        Incrementally prepare conversation patterns for fast, non-ledger responses.
+
+        Work is intentionally small per tick: compile a few patterns at a time.
+        """
+        # Initialize state on first run.
+        if not self._conversation_patterns:
+            self._conversation_patterns = seed_patterns()
+            self._conversation_training_state = {"compiled_index": 0}
+
+        compiled_index = int(
+            self._conversation_training_state.get("compiled_index", 0)
+        )
+
+        # Compile a bounded batch of patterns per idle tick.
+        batch_size = 2
+        upper = min(compiled_index + batch_size, len(self._conversation_patterns))
+        if compiled_index >= upper:
+            # All patterns compiled; nothing else to do this tick.
+            return
+
+        to_compile = self._conversation_patterns[compiled_index:upper]
+        compile_patterns(to_compile)
+        self._conversation_training_state["compiled_index"] = upper
+
+        # Log occasionally when we make progress.
+        if upper == len(self._conversation_patterns):
+            logger.info(
+                "[Idle-Conv] Conversation patterns ready: %d",
+                len(self._conversation_patterns),
+            )
+
+    def _idle_code_introspection(self):
+        """
+        Periodically refresh an internal map of modules and HTTP endpoints.
+
+        This is throttled to avoid unnecessary filesystem work.
+        """
+        now = time.time()
+        # Run at most once per hour.
+        if now - self._last_code_introspection_ts < 3600:
+            return
+
+        src_root = os.path.dirname(os.path.abspath(__file__))
+        try:
+            self._code_map = build_module_map(src_root)
+            node_path = os.path.join(src_root, "node.py")
+            self._endpoint_registry = build_endpoint_registry(node_path)
+            self._last_code_introspection_ts = now
+            logger.info(
+                "[Idle-Code] Refreshed code map (%d modules, %d endpoints).",
+                len(self._code_map or {}),
+                len(self._endpoint_registry or []),
+            )
+        except Exception as e:
+            logger.info("[Idle-Code] Code introspection skipped: %s", e)
+
+    def _idle_data_quality(self):
+        """
+        Periodically sample the ledger for duplicate and conflicting facts.
+
+        Results are cached in-memory for later inspection or reporting.
+        """
+        now = time.time()
+        # Run at most once every 15 minutes.
+        if now - self._last_data_quality_ts < 900:
+            return
+
+        try:
+            dupes = find_duplicate_candidates(self.db_path, sample_size=300)
+            conflicts = find_conflict_candidates(self.db_path, sample_size=300)
+            self._duplicate_summary = dupes
+            self._conflict_summary = conflicts
+            self._last_data_quality_ts = now
+            logger.info(
+                "[Idle-Data] Sampled data quality: %d duplicate groups, %d conflict groups.",
+                len(dupes),
+                len(conflicts),
+            )
+        except Exception as e:
+            logger.info("[Idle-Data] Data quality scan skipped: %s", e)
+
+    def _idle_health_snapshot(self):
+        """
+        Periodically compute a lightweight health snapshot of the ledger/db.
+        """
+        now = time.time()
+        # Run at most once every 10 minutes.
+        if now - self._last_health_snapshot_ts < 600:
+            return
+        try:
+            self._health_snapshot = compute_health_snapshot(self.db_path)
+            self._last_health_snapshot_ts = now
+            logger.info(
+                "[Idle-Health] Updated health snapshot: %s",
+                self._health_snapshot,
+            )
+        except Exception as e:
+            logger.info("[Idle-Health] Health snapshot skipped: %s", e)
+
+    def _idle_self_checks(self):
+        """
+        Occasionally run a few deterministic self-queries against our own /think endpoint.
+        """
+        now = time.time()
+        # Run at most once every 3 hours.
+        if now - self._last_self_check_ts < 10800:
+            return
+        # Use the local self_url to avoid any external DNS/network dependency.
+        base_url = self.self_url
+        try:
+            self._self_check_results = run_self_checks(base_url)
+            self._last_self_check_ts = now
+            logger.info(
+                "[Idle-SelfCheck] Completed self-checks: %s",
+                self._self_check_results,
+            )
+        except Exception as e:
+            logger.info("[Idle-SelfCheck] Self-checks skipped: %s", e)
+
+    # --- Helpers for meta-commands exposed via /think ---
+
+    def get_system_map_summary(self) -> str:
+        if not self._code_map:
+            return "System map is not ready yet. Idle introspection will build it shortly."
+        module_count = len(self._code_map)
+        # Highlight a few key modules if present.
+        interesting = [
+            name
+            for name in self._code_map.keys()
+            if any(key in name for key in ("node.py", "crucible", "synthesizer", "blockchain", "p2p"))
+        ]
+        interesting = sorted(set(interesting))[:8]
+        parts = [f"I currently see {module_count} Python modules under src/."]
+        if interesting:
+            parts.append("Key subsystems include: " + ", ".join(interesting) + ".")
+        return " ".join(parts)
+
+    def get_endpoints_summary(self) -> str:
+        if not self._endpoint_registry:
+            return "Endpoint registry is not ready yet. Idle code introspection will populate it."
+        lines = []
+        for ep in self._endpoint_registry[:20]:
+            path = ep.get("path") or "/"
+            methods = ",".join(ep.get("methods", []))
+            func = ep.get("function", "")
+            lines.append(f"{methods} {path} -> {func}")
+        extra = ""
+        if len(self._endpoint_registry) > 20:
+            extra = f" (+{len(self._endpoint_registry) - 20} more)"
+        return "Exposed HTTP endpoints:\n" + "\n".join(lines) + extra
+
+    def get_health_summary(self) -> str:
+        if not self._health_snapshot:
+            return "Health snapshot is not ready yet. Idle health checks will compute it."
+        snap = self._health_snapshot
+        total = snap.get("total_facts", 0)
+        blocks = snap.get("total_blocks", 0)
+        height = snap.get("chain_height", 0)
+        avg_trust = snap.get("avg_trust_score")
+        status_counts = snap.get("status_counts", {})
+        parts = [
+            f"Facts: {total}, Blocks: {blocks}, Chain height: {height}.",
+            f"Status counts: {status_counts}.",
+        ]
+        if avg_trust is not None:
+            parts.append(f"Average trust score: {avg_trust:.3f}.")
+        return " ".join(parts)
+
+    def _run_idle_tick(self):
+        """Run a single idle task, if any are registered."""
+        if not self.idle_tasks:
+            return
+        task = self.idle_tasks[self._idle_task_index % len(self.idle_tasks)]
+        self._idle_task_index += 1
+        try:
+            task()
+        except Exception as e:
+            logger.info("[Idle] Task %s skipped: %s", getattr(task, "__name__", "unknown"), e)
+
     def _background_loop(self):
         logger.info("Starting continuous background cycle.")
+        next_cycle = time.time()
         while True:
-            logger.info("\033[2m[AXIOM ENGINE CYCLE START]\033[0m")
-            newly_created_facts = []
-            try:
-                topics = zeitgeist_engine.get_trending_topics(top_n=100)
-                if topics:
-                    topic = topics[self._topic_rotation_index % len(topics)]
-                    self._topic_rotation_index += 1
-                    logger.info(
-                        f"\033[96mSelected topic for this cycle: {topic}\033[0m",
-                    )
-                    content_list = universal_extractor.find_and_extract(
-                        topic,
-                        max_sources=3,
-                    )
-                    for item in content_list:
-                        new_facts = crucible.extract_facts_from_text(
-                            item["source_url"],
-                            item["content"],
-                        )
-                        if new_facts:
-                            newly_created_facts.extend(new_facts)
-                    if newly_created_facts:
-                        synthesizer.link_related_facts(newly_created_facts)
-            except Exception as e:
-                logger.error(f"Error: {e}")
-
-            logger.info("\033[2m[AXIOM ENGINE CYCLE FINISH]\033[0m")
-
-            if newly_created_facts:
-                fact_ids = [f["fact_id"] for f in newly_created_facts]
-                
-                # Call create_block, which returns the block dict or None on failure/race
-                new_block = create_block(fact_ids) 
-                
-                if new_block:
-                    logger.info(f"\033[96m[Chain] Committed block HEIGHT {new_block['height']} with {len(fact_ids)} fact(s).\033[0m")
-                else:
-                    logger.warning(f"[Chain] Failed to commit block for {len(fact_ids)} facts. Check for race condition or duplicate ID.")
-
-            for peer_url in list(self.peers.keys()):
-                try:
-                    sync_status, new_facts = sync_with_peer(
-                        self,
-                        peer_url,
-                        self.db_path,
-                    )
-                    self._update_reputation(
-                        peer_url,
-                        sync_status,
-                        len(new_facts),
-                    )
-                    sync_chain_with_peer(self, peer_url, self.db_path)
-                except:
-                    pass
-            self._reflection_cycle()
-            metacognitive_engine.run_metacognitive_cycle(self.db_path)
-            self._prune_ledger()
-            self.print_mesh_status()
-            time.sleep(900)
+            now = time.time()
+            if now >= next_cycle:
+                self._run_main_cycle()
+                next_cycle = now + self.main_cycle_interval
+            else:
+                self._run_idle_tick()
+                time.sleep(self.idle_tick_interval)
 
     def _prune_ledger(self):
         """Deletes old, uncorroborated facts to manage node storage size."""
@@ -445,7 +770,33 @@ def handle_thinking():
     if not query:
         return jsonify({"response": "System standby. Awaiting input."})
 
-    answer = inference_engine.think(query, db_path=node_instance.db_path)
+    # Macro-style meta commands that do not require ledger lookups.
+    normalized = " ".join(query.strip().lower().split())
+    if normalized in ("axiom: status", "show health"):
+        return jsonify({"response": node_instance.get_health_summary()})
+    if normalized in ("axiom: map", "list modules"):
+        return jsonify({"response": node_instance.get_system_map_summary()})
+    if normalized in ("show endpoints",):
+        return jsonify({"response": node_instance.get_endpoints_summary()})
+
+    # Fast, non-ledger conversational routing next.
+    handled = False
+    direct_answer = ""
+    try:
+        if hasattr(node_instance, "_conversation_patterns"):
+            handled, direct_answer = match_query(
+                query,
+                getattr(node_instance, "_conversation_patterns", []),
+            )
+    except Exception:
+        handled = False
+        direct_answer = ""
+
+    if handled and direct_answer:
+        return jsonify({"response": direct_answer})
+
+    out = inference_engine.think(query, db_path=node_instance.db_path)
+    answer = out.get("response", out) if isinstance(out, dict) else out
     return jsonify({"response": answer})
 
 
@@ -475,8 +826,14 @@ if __name__ == "__main__":
         port_val = int(os.environ.get("PORT", 8009))
         bootstrap_val = os.environ.get("BOOTSTRAP_PEER")
         node_instance = AxiomNode(port=port_val, bootstrap_peer=bootstrap_val)
-        node_instance.bootstrap_sync()
-        node_instance.start_background_tasks()
+        
+        initial_sync_complete = True
+        if port_val != 8009 and node_instance.peers: # Only run explicit sync for non-bootstrap peers
+            initial_sync_complete = node_instance.bootstrap_sync()
+            if not initial_sync_complete:
+                 logger.warning("[INIT] Initial chain sync failed. Relying on background loop.")
+
+        node_instance.start_background_tasks()        
     logger.info(
         f"\033[2mAxiom Identity: {node_instance.advertised_url}\033[0m",
     )

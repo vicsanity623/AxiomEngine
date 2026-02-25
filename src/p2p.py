@@ -8,7 +8,12 @@ import zlib
 import json
 import requests
 
-from src.blockchain import append_block, get_chain_head, get_blocks_after
+from src.blockchain import (
+    append_block,
+    get_chain_head,
+    get_blocks_after,
+    replace_chain_with_peer_blocks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +188,7 @@ def sync_chain_with_peer(node_instance, peer_url, db_path: str):
         if peer_height <= our_height:
             return 0, peer_height
 
+        # If peer is ahead, try incremental sync first.
         blocks_resp = requests.get(
             f"{peer_url}/get_blocks_after",
             params={"height": our_height},
@@ -191,19 +197,42 @@ def sync_chain_with_peer(node_instance, peer_url, db_path: str):
         )
         blocks_resp.raise_for_status()
         blocks = blocks_resp.json().get("blocks", [])
-        if not blocks:
-            return 0, peer_height
 
         appended = 0
         for blk in blocks:
-            # Append blocks into this node's chain using the correct db_path.
             if append_block(blk, db_path=db_path):
                 appended += 1
             else:
-                logger.warning(
-                    f"[P2P Chain] Failed to append block {blk.get('block_id', '')[:16]}..."
-                )
-                break
+                # Incremental append failed (divergence detected).
+                # We must attempt to adopt the full chain if the peer is taller.
+                if peer_height > our_height:
+                    logger.warning(
+                        f"[P2P Chain] Divergence detected. Attempting full chain adoption from {peer_url} (Height {peer_height})."
+                    )
+                    try:
+                        full_resp = requests.get(
+                            f"{peer_url}/get_blocks_after",
+                            params={"height": 0},
+                            timeout=15,
+                            headers=headers,
+                        )
+                        full_resp.raise_for_status()
+                        peer_blocks = full_resp.json().get("blocks", [])
+                        if peer_blocks and replace_chain_with_peer_blocks(peer_blocks, db_path=db_path):
+                            logger.info(
+                                f"\033[92m[P2P Chain] Adopted peer chain from {peer_url} (longest-chain wins, height now {peer_height}).\033[0m",
+                            )
+                            return len(peer_blocks), peer_height
+                        else:
+                            logger.error(
+                                f"[P2P Chain] Chain adoption failed after divergence. Peer's full history starting at height 0 is unusable/inconsistent."
+                            )
+                    except Exception as e:
+                        logger.debug(f"[P2P Chain] Could not adopt peer chain: {e}")
+                
+                # Stop trying to append the rest of this partial batch
+                break 
+        
         if appended > 0:
             logger.info(
                 f"\033[92m[P2P Chain] Appended {appended} block(s) from {peer_url} (height now {our_height + appended}).\033[0m",

@@ -140,16 +140,27 @@ def _is_valid_grammatical_sentence(doc):
     return True
 
 
+# Minimum number of distinct named entities required for a sentence to be stored as a fact.
+# Reduces topic-less or single-entity filler sentences (e.g. "The BBC saw X returning").
+MIN_NAMED_ENTITIES_FOR_FACT = 2
+
+
+def _count_named_entities(doc):
+    """Count distinct named entities (ORG, PERSON, GPE, etc.) in the doc."""
+    valid_labels = {"ORG", "PERSON", "GPE", "EVENT", "LAW", "LOC"}
+    seen = set()
+    for ent in doc.ents:
+        if ent.label_ in valid_labels:
+            seen.add((ent.text, ent.label_))
+    return len(seen)
+
+
 def _contains_named_entity(doc):
     """Quality Control: A 'Fact' is usually about specific entities.
     Reject sentences like "He went to the store" (Who is He?).
     Accept "Elon Musk went to the store."
     """
-    valid_labels = {"ORG", "PERSON", "GPE", "EVENT", "LAW", "LOC"}
-    for ent in doc.ents:
-        if ent.label_ in valid_labels:
-            return True
-    return False
+    return _count_named_entities(doc) >= 1
 
 
 def _check_for_contradiction(new_doc, all_existing_facts):
@@ -235,8 +246,9 @@ def extract_facts_from_text(source_url, text_content):
         
         if not _is_valid_grammatical_sentence(sent_doc):
             continue
-            
-        if not _contains_named_entity(sent_doc):
+
+        # Require at least MIN_NAMED_ENTITIES so we avoid topic-less single-entity filler.
+        if _count_named_entities(sent_doc) < MIN_NAMED_ENTITIES_FOR_FACT:
             continue
 
         conflicting_fact = _check_for_contradiction(

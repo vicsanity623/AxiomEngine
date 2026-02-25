@@ -9,6 +9,7 @@ build/
 
 # Generated Visualizations
 axiom_graph.html
+axiom_brain.html
 *.html_tmp
 
 # Python cache
@@ -21,6 +22,7 @@ __pycache__/
 # --- IDE / Editor specific files ---
 .vscode/
 .idea/
+AxiomEngine.code-workspace
 
 # Local Environment
 .venv

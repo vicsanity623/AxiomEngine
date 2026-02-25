@@ -2,27 +2,44 @@
 # Copyright (C) 2026 The Axiom Contributors
 
 import sqlite3
+import zlib
 from typing import Any # Added for type hinting consistency
 
 # DB_NAME removed. All functions now require db_path.
 
 
+def _decompress_fact_content(raw):
+    """Return decompressed fact text for viz/JSON; raw may be bytes (BLOB) or str."""
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    try:
+        return zlib.decompress(raw).decode("utf-8")
+    except (TypeError, zlib.error, ValueError):
+        return "[unable to decompress]"
+
+
 def load_facts_and_relationships(db_path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Loads facts and relationships from the ledger."""
+    """Loads facts and relationships from the ledger. fact_content is decompressed to str for viz."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     try:
-        # ADDED source_url to the selection
         cur.execute(
             "SELECT fact_id, fact_content, status, trust_score, source_url FROM facts",
         )
-        facts = [dict(row) for row in cur.fetchall()]
+        rows = cur.fetchall()
+        facts = []
+        for row in rows:
+            d = dict(row)
+            d["fact_content"] = _decompress_fact_content(d.get("fact_content"))
+            facts.append(d)
         cur.execute(
             "SELECT fact_id_1, fact_id_2, weight FROM fact_relationships",
         )
         relationships = [dict(row) for row in cur.fetchall()]
-    except:
+    except Exception:
         facts, relationships = [], []
     conn.close()
     return facts, relationships
@@ -58,7 +75,7 @@ def to_json_for_viz(db_path: str, include_sources=True, topic_filter=None):
         matching_ids = {
             f["fact_id"]
             for f in facts
-            if topic_lower in (f["fact_content"] or "").lower()
+            if topic_lower in (f.get("fact_content") or "").lower()
         }
         if not matching_ids:
             return {"nodes": [], "edges": []}
@@ -78,16 +95,20 @@ def to_json_for_viz(db_path: str, include_sources=True, topic_filter=None):
             and r["fact_id_2"] in neighbor_ids
         ]
 
-    # REMOVED character truncation logic
+    # fact_content is already decompressed to str in load_facts_and_relationships
     nodes = []
     for f in facts:
+        content = f.get("fact_content") or ""
+        if isinstance(content, bytes):
+            content = _decompress_fact_content(content)
         nodes.append(
             {
                 "id": f["fact_id"],
-                "label": f["fact_content"],  # Send the whole fact
+                "label": content,
+                "full_content": content,
                 "status": f["status"],
                 "value": f["trust_score"],
-                "source_url": f.get("source_url", ""),
+                "source_url": f.get("source_url", "") or "",
             },
         )
 

@@ -4,12 +4,12 @@
 # --- V3.4: DYNAMIC DB PATHING FOR INSPECTION UTILITY ---
 
 import argparse
-import zlib
+import os
 import sqlite3
 import sys
-import os # Added import to check for environment variables
+import zlib
 
-# Removed DB_NAME global constant
+from src.ledger import initialize_database
 
 CYAN = "\033[96m"
 GREEN = "\033[92m"
@@ -21,6 +21,21 @@ RESET = "\033[0m"
 
 def print_header(text):
     print(f"\n{CYAN}=== {text} ==={RESET}")
+
+
+def ensure_ledger_schema(db_path: str) -> None:
+    """If the DB has no facts table (e.g. fresh or after reset), initialize schema."""
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='facts'"
+        )
+        needs_init = cur.fetchone() is None
+    finally:
+        conn.close()
+    if needs_init:
+        initialize_database(db_path)
 
 
 def print_stats(db_path: str):
@@ -54,13 +69,20 @@ def print_stats(db_path: str):
         print(f"Neural Synapses:    {synapses}")
         print("-" * 30)
 
+        # Always show trusted (verified), disputed, uncorroborated (0 if missing)
+        status_counts = {"trusted": 0, "disputed": 0, "uncorroborated": 0}
         for status, count in stats:
+            if status in status_counts:
+                status_counts[status] = count
+        for status in ("trusted", "disputed", "uncorroborated"):
+            count = status_counts[status]
+            label = "trusted (verified)" if status == "trusted" else status
             color = (
                 GREEN
                 if status == "trusted"
                 else (RED if status == "disputed" else GRAY)
             )
-            print(f"{color}{status.ljust(15)}: {count}{RESET}")
+            print(f"{color}{label.ljust(20)}: {count}{RESET}")
 
     except Exception as e:
         print(f"Error reading stats: {e}")
@@ -182,11 +204,13 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
+    ensure_ledger_schema(args.db)
+
     if args.stats:
-        print_stats(args.db) # Pass DB path
+        print_stats(args.db)
     elif args.brain:
-        print_stats(args.db) # Pass DB path
-        print_brain(args.db, args.limit) # Pass DB path
+        print_stats(args.db)
+        print_brain(args.db, args.limit)
     else:
-        print_stats(args.db) # Pass DB path
-        print_facts(args.db, args.limit) # Pass DB path
+        print_stats(args.db)
+        print_facts(args.db, args.limit)

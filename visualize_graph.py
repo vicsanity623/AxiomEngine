@@ -92,6 +92,9 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
         let physicsActive = true;
         let animationTime = 0;
         const CAMERA_Z = 1000;
+        let cachedPositions = null;
+        let cachedEdges = null;
+        const MAX_EDGES_FOR_FANCY = 800;
 
         const initInterval = setInterval(() => {{
             if (typeof network !== 'undefined') {{ clearInterval(initInterval); startAxiomEngine(); }}
@@ -106,6 +109,8 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
             network.once("stabilizationIterationsDone", function() {{
                 network.setOptions({{ physics: false }});
                 physicsActive = false;
+                cachedPositions = network.getPositions();
+                cachedEdges = edges.get();
                 document.getElementById('hud-physics').innerText = "FROZEN (60 FPS)";
                 document.getElementById('hud-physics').style.color = "#22c55e";
                 requestAnimationFrame(renderLoop);
@@ -133,13 +138,21 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
                 }} else {{ closeModal(); }}
             }});
 
+            // When the user drags nodes, refresh cached positions so the renderer stays in sync.
+            network.on("dragEnd", function() {{
+                cachedPositions = network.getPositions();
+            }});
+
             network.on("beforeDrawing", function (ctx) {{
-                const positions = network.getPositions();
-                const edgesData = edges.get();
+                const positions = cachedPositions || network.getPositions();
+                const edgesData = cachedEdges || edges.get();
                 ctx.globalCompositeOperation = "screen";
                 if (!physicsActive) animationTime += 0.02;
 
-                edgesData.forEach(edge => {{
+                const totalEdges = edgesData.length || 0;
+                const edgeStep = totalEdges > MAX_EDGES_FOR_FANCY ? Math.ceil(totalEdges / MAX_EDGES_FOR_FANCY) : 1;
+                for (let ei = 0; ei < totalEdges; ei += edgeStep) {{
+                    const edge = edgesData[ei];
                     let p1 = positions[edge.from], p2 = positions[edge.to];
                     if (!p1 || !p2) return;
                     let d1 = axiomData[edge.from], d2 = axiomData[edge.to];
@@ -155,7 +168,8 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
                         ctx.beginPath(); ctx.strokeStyle = (w === 1) ? d1.color : d2.color;
                         ctx.lineWidth = 1.0; ctx.shadowBlur = 10; ctx.shadowColor = ctx.strokeStyle;
                         ctx.globalAlpha = 0.7;
-                        for (let i = 0; i <= dist; i += 5) {{
+                        const segmentStep = dist > 300 ? 12 : 6;
+                        for (let i = 0; i <= dist; i += segmentStep) {{
                             let env = Math.sin((i / dist) * Math.PI);
                             let off = (Math.sin(i * 0.03 * w + animationTime) + Math.cos(i * 0.06 - animationTime * 1.3)) * 6 * env;
                             if (i === 0) ctx.moveTo(i, off); else ctx.lineTo(i, off);
@@ -163,7 +177,7 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
                         ctx.stroke();
                     }}
                     ctx.restore();
-                }});
+                }}
 
                 ctx.globalCompositeOperation = "source-over";
                 for (let nodeId in positions) {{
@@ -202,14 +216,17 @@ def build_pyvis_html(out_path, data, mode_label, is_brain):
     for n in nodes:
         added_node_ids.add(n["id"])
         z = 200 if is_brain else (0 if n.get("status") == "trusted" else -200)
+        content = n.get("label") or n.get("full_content") or ""
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", errors="replace")
         node_data_dict[n["id"]] = {
-            "content": n.get("label", n.get("full_content", "")),
+            "content": content,
             "status": n.get(
                 "status",
                 "brain" if is_brain else "uncorroborated",
             ),
             "value": n["value"],
-            "source": n.get("source_url", ""),
+            "source": n.get("source_url", "") or "",
             "is_brain": is_brain,
             "color": get_node_colors(n.get("status", ""), is_brain),
             "z": z,
@@ -257,7 +274,7 @@ def build_pyvis_html(out_path, data, mode_label, is_brain):
 
 
 if __name__ == "__main__":
-    import graph_export
+    from src import graph_export
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--topic", help="Filter ledger graph by topic")

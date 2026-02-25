@@ -74,9 +74,10 @@ def get_weighted_entities(text):
     return entities
 
 
-def link_related_facts(new_facts_batch):
+def link_related_facts(new_facts_batch, db_path: str | None = None):
     """Compares a batch of new facts against the ledger.
     Creates links and reinforces Neural Synapses between concepts.
+    db_path: ledger to use (for peer nodes with a different DB).
     """
     if not NLP_MODEL or not new_facts_batch:
         return
@@ -87,7 +88,15 @@ def link_related_facts(new_facts_batch):
 
     new_facts_data = []
     for fact in new_facts_batch:
-        ents = get_weighted_entities(fact["fact_content"])
+        content = fact.get("fact_content")
+        if isinstance(content, (bytes, bytearray)):
+            try:
+                content = zlib.decompress(content).decode("utf-8")
+            except (zlib.error, ValueError, TypeError):
+                continue
+        if not content:
+            continue
+        ents = get_weighted_entities(content)
         if ents:
             new_facts_data.append({"id": fact["fact_id"], "entities": ents})
 
@@ -97,7 +106,7 @@ def link_related_facts(new_facts_batch):
         )
         return
 
-    all_facts_in_ledger = get_all_facts_for_analysis()
+    all_facts_in_ledger = get_all_facts_for_analysis(db_path or "axiom_ledger.db")
     logger.info(
         f"\033[96m[The Synthesizer] Indexing {len(all_facts_in_ledger)} existing facts for cross-reference...\033[0m",
     )
