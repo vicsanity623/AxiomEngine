@@ -222,7 +222,7 @@ def main():
 
     print("To run the standalone node:")
     print("   cd dist/")
-    print(f"   .{os.path.sep}{APP_NAME}")
+    print(f"   {exe_path}")
 
 
 if __name__ == "__main__":

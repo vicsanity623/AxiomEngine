@@ -33,3 +33,4 @@ lib/
 
 # MacOS junk
 .DS_Store
+src/axiom_engine.egg-info

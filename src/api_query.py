@@ -26,7 +26,7 @@ def search_ledger_for_api(
         cursor = conn.cursor()
         
         # We must select the content column explicitly in case it's a BLOB
-        query = "SELECT fact_id, fact_content, status, trust_score, source_url FROM facts WHERE fact_content LIKE ?"
+        query = "SELECT fact_id, fact_content, status, trust_score, source_url, ingest_timestamp_utc FROM facts WHERE fact_content LIKE ?"
         params = [f"%{search_term}%"]
         if not include_disputed:
             query += " AND status != 'disputed'"

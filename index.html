@@ -87,7 +87,7 @@
             border: 1px solid var(--neon-cyan);
             box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
             padding: 20px;
-            margin: 2rem 0;
+            margin: 2rem 0 1rem 0;
             border-radius: 4px;
             position: relative;
         }
@@ -113,8 +113,8 @@
         }
 
         .terminal-display {
-            min-height: 150px;
-            max-height: 400px;
+            min-height: 180px;
+            max-height: 260px;
             overflow-y: auto;
             font-size: 0.9rem;
             margin-bottom: 15px;
@@ -239,6 +239,173 @@
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); }
 
+        .user-guide-section { margin-bottom: 2rem; }
+        .user-guide-rendered { font-size: 0.9rem; line-height: 1.5; }
+        .user-guide-rendered h1, .user-guide-rendered h2, .user-guide-rendered h3 { color: var(--neon-cyan); margin-top: 1rem; margin-bottom: 0.5rem; }
+        .user-guide-rendered h1 { font-size: 1.2rem; } .user-guide-rendered h2 { font-size: 1.1rem; } .user-guide-rendered h3 { font-size: 1rem; }
+        .user-guide-rendered p { margin: 0.5rem 0; color: var(--text-color); }
+        .user-guide-rendered ul, .user-guide-rendered ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+        .user-guide-rendered li { margin: 0.25rem 0; }
+        .user-guide-rendered code, .user-guide-rendered pre { background: rgba(10, 15, 20, 0.9); color: var(--neon-green); padding: 2px 6px; border-radius: 3px; font-size: 0.85em; }
+        .user-guide-rendered pre { display: block; padding: 10px; overflow-x: auto; }
+        .user-guide-rendered a { color: var(--neon-cyan); text-decoration: none; }
+        .user-guide-rendered a:hover { text-decoration: underline; }
+        .user-guide-rendered hr { border: none; border-top: 1px solid #333; margin: 1rem 0; }
+        .user-guide-rendered table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; font-size: 0.85rem; }
+        .user-guide-rendered th, .user-guide-rendered td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
+        .user-guide-rendered th { color: var(--neon-cyan); }
+
+        /* Knowledge canvas layout */
+
+        .canvas-wrapper {
+            background: rgba(5, 5, 5, 0.9);
+            border: 1px solid #222;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.08);
+            border-radius: 4px;
+            padding: 15px 18px 18px 18px;
+            margin-bottom: 2rem;
+        }
+
+        .canvas-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--dim-color);
+        }
+
+        .canvas-header span.label {
+            color: var(--neon-cyan);
+        }
+
+        .canvas-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+        }
+
+        .canvas-filters label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(10, 15, 20, 0.9);
+            border: 1px solid #222;
+            padding: 4px 8px;
+            border-radius: 3px;
+        }
+
+        .canvas-filters select,
+        .canvas-filters input[type="checkbox"] {
+            background: transparent;
+            border: none;
+            color: var(--neon-cyan);
+            font-family: var(--font-main);
+            font-size: 0.8rem;
+        }
+
+        .canvas-filters select:focus {
+            outline: none;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr);
+            gap: 12px;
+            min-height: 220px;
+            max-height: 420px;
+        }
+
+        @media (max-width: 900px) {
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .results-column {
+            background: rgba(8, 12, 16, 0.95);
+            border: 1px solid #111;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        .results-column h3 {
+            margin: 0 0 8px 0;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--neon-cyan);
+        }
+
+        .fact-card {
+            border: 1px solid #222;
+            padding: 8px 9px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+            background: rgba(5, 8, 12, 0.95);
+        }
+
+        .fact-card .meta {
+            font-size: 0.7rem;
+            color: var(--dim-color);
+            margin-bottom: 4px;
+        }
+
+        .fact-card .meta span.tag {
+            margin-right: 6px;
+        }
+
+        .fact-card .content {
+            margin-bottom: 4px;
+        }
+
+        .fact-card .source {
+            font-size: 0.7rem;
+            color: var(--dim-color);
+        }
+
+        .fact-card .fact-timestamp {
+            font-size: 0.75rem;
+            color: var(--neon-cyan);
+            margin-bottom: 4px;
+        }
+
+        .mesh-node {
+            display: inline-block;
+            padding: 4px 8px;
+            margin: 2px 3px;
+            border-radius: 12px;
+            border: 1px solid #222;
+            font-size: 0.75rem;
+            background: rgba(5, 12, 18, 0.95);
+        }
+
+        .mesh-node.core {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+            box-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+        }
+
+        .mesh-node.edge {
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+        }
+
+        .mesh-edge-meta {
+            display: block;
+            font-size: 0.65rem;
+            color: var(--dim-color);
+        }
+
+        .empty-state {
+            font-size: 0.8rem;
+            color: var(--dim-color);
+        }
+
     </style>
 </head>
 <body>
@@ -247,8 +414,13 @@
 
         <header>
             <h1>AXIOM<span class="blink">_</span></h1>
-            <p>Decentralized Knowledge Ledger // v0.2.0<span class="blink">_</span>beta</p>
+            <p>Decentralized Knowledge Ledger // v0.2.1-beta.1<span class="blink">_</span>beta</p>
         </header>
+
+        <section id="user-guide" class="card user-guide-section">
+            <h2>// INTERFACE_GUIDE</h2>
+            <div id="user-guide-content" class="user-guide-rendered"></div>
+        </section>
 
         <div class="terminal-wrapper">
             <div class="terminal-header">
@@ -259,11 +431,51 @@
                 <div class="log-entry"><span class="log-time">SYS_INIT</span> <span class="log-cyan">Welcome to Axiom Web Interface.</span></div>
                 <div class="log-entry"><span class="log-time">READY</span> <span class="log-green">Node connection established. Waiting for query...</span></div>
             </div>
+
+            <div class="canvas-wrapper">
+                <div class="canvas-header">
+                    <span class="label">// KNOWLEDGE_CANVAS</span>
+                    <span id="canvasStatus">Idle. Awaiting query.</span>
+                </div>
+                <div class="canvas-filters">
+                    <label>
+                        LIMIT
+                        <select id="resultLimit">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </label>
+                    <label>
+                        <input type="checkbox" id="exactMatch">
+                        EXACT_MATCH
+                    </label>
+                    <label>
+                        <input type="checkbox" id="includeUncorroborated" checked>
+                        INCLUDE_UNCORROBORATED
+                    </label>
+                </div>
+                <div class="results-grid">
+                    <div class="results-column" id="factsColumn">
+                        <h3>// LEDGER_RESULTS</h3>
+                        <div id="factsPanel" class="empty-state">
+                            No query yet. Results will appear here.
+                        </div>
+                    </div>
+                    <div class="results-column" id="meshColumn">
+                        <h3>// LEXICAL_MESH</h3>
+                        <div id="meshPanel" class="empty-state">
+                            Concept graph will appear here after a query.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="input-line">
                 <span class="prompt">USER@AXIOM:~$</span>
                 <input type="text" id="queryInput" placeholder="Enter keyword to query the ledger..." autocomplete="off">
                 <button class="exec-btn" onclick="runQuery()">EXECUTE</button>
-                <button id="muteToggle" class="mode-btn" onclick="toggleMute()" style="background:transparent; border:1px solid #00f0ff; color:#00f0ff; padding: 5px 10px; font-size:10px; margin-left: 15px; cursor:pointer;">MUTE [ON]</button>
+                <button id="muteToggle" class="mode-btn" onclick="toggleMute()" style="background:transparent; border:1px solid #00f0ff; color:#00f0ff; padding: 5px 10px; font-size:10px; margin-left: 15px; cursor:pointer;">MUTE [OFF]</button>
             </div>
         </div>
 
@@ -286,7 +498,7 @@
                     <h3>INITIATE LINK</h3>
                     <p>The Axiom Client is your secure gateway. Ask any question, get a verifiable answer sourced from the mesh network.</p>
                     <div class="download-grid">
-                        <a href="https://github.com/vicsanity623/AxiomEngine/releases/download/voice/Axiom_Node_v0.2.0_x86_64.dmg" class="btn">[DOWNLOAD] macOS (Intel/ARM)</a>
+                        <a href="https://github.com/vicsanity623/AxiomEngine/releases/download/voice/Axiom_Node_v0.2.1-beta.1_x86_64.dmg" class="btn">[DOWNLOAD] macOS (Intel/ARM)</a>
                         <a href="#" class="btn">[DOWNLOAD] Windows</a>
                         <a href="#" class="btn">[DOWNLOAD] Linux</a>
                     </div>
@@ -324,29 +536,129 @@
 
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script type="text/markdown" id="user-guide-md">
+# Axiom Web Interface — User Guide
+
+This guide explains how to use the **AXIOM** web interface to query the decentralized knowledge ledger and inspect results.
+
+---
+
+## 1. Overview
+
+The page is a single **AXIOM AGENT** window that combines:
+
+- **Console** — Command-style input and Axiom's spoken/written answers.
+- **Knowledge Canvas** — Ledger results and Lexical Mesh for the query concept.
+- **Filters** — Limit, exact match, and uncorroborated-inclusion options.
+
+---
+
+## 2. Connecting to a Node
+
+- **Default:** The page connects to `http://127.0.0.1:8009` (local node).
+- **To switch node:** Type `connect https://your-node-url.example.com` or `connect http://127.0.0.1:8010` and press Enter. The header updates to show the active connection.
+- **HTTPS:** If the page is served over HTTPS, use `connect https://...`; browsers block mixed content.
+
+---
+
+## 3. Asking a Question (Chat)
+
+- Type any question or topic in the **USER@AXIOM:~$** field (e.g. `epstein files`, `economy`, `what is the lexical mesh`).
+- Press **Enter** or click **EXECUTE**.
+- **AXIOM >>** shows the node's answer. Voice is **off** by default; click **MUTE [OFF]** to turn it **on** if you want speech.
+
+---
+
+## 4. Knowledge Canvas (Ledger + Mesh)
+
+After each query, two panels update:
+
+- **// LEDGER_RESULTS** — Matching facts: status, trust score, fragment flags, **timestamp line** (e.g. "On Sunday, Sep 15, 2026 it was verified that…"), fact text, and source URL. The timestamp is the stable fact-check reference if the source link dies.
+- **// LEXICAL_MESH** — Concepts linked to the query term (word relations and strengths).
+
+**Filters:** LIMIT (10/20/50), EXACT_MATCH, INCLUDE_UNCORROBORATED.
+
+---
+
+## 5. Voice (Speech Synthesis)
+
+- **Default:** Voice is **off** (muted) when the page first loads.
+- **Toggle:** Click **MUTE [OFF]** to turn voice **on** (button becomes **MUTE [ON]**). Click again to mute. Your choice is remembered (localStorage).
+
+---
+
+## 6. Fact-Check Timestamps
+
+Each fact card shows a timestamp line:
+
+- **Trusted:** *"On [Weekday], [Mon], [DD], [YYYY] it was verified that…"*
+- **Uncorroborated:** *"As of [Weekday], [Mon], [DD], [YYYY] uncorroborated claims state that…"*
+- **Disputed:** *"As of [Weekday], [Mon], [DD], [YYYY] disputed claims state that…"*
+
+The date comes from the fact's ingest time on the node.
+
+---
+
+## 7. Quick Reference
+
+| Action | How |
+|--------|-----|
+| Query the ledger | Type a question, press Enter or EXECUTE. |
+| Change node | `connect https://…` or `connect http://…` |
+| Toggle voice | Click MUTE [OFF] / MUTE [ON]. |
+| More/fewer facts | Change LIMIT (10 / 20 / 50). |
+| Stricter matches | Check EXACT_MATCH. |
+| Hide uncorroborated | Uncheck INCLUDE_UNCORROBORATED. |
+
+---
+
+*AXIOM // Decentralized Knowledge Ledger // Open Source (PPL)*
+    </script>
     <script>
         const input = document.getElementById('queryInput');
         const output = document.getElementById('output');
         const nodeHeader = document.querySelector('.terminal-header span');
         const EXECUTE_BTN = document.querySelector('.exec-btn');
+        const canvasStatus = document.getElementById('canvasStatus');
+        const resultLimitEl = document.getElementById('resultLimit');
+        const exactMatchEl = document.getElementById('exactMatch');
+        const includeUncorroboratedEl = document.getElementById('includeUncorroborated');
+        const factsPanel = document.getElementById('factsPanel');
+        const meshPanel = document.getElementById('meshPanel');
+
+        function deriveSearchToken(raw) {
+            const parts = String(raw || "")
+                .split(/\s+/)
+                .map(p => p.trim())
+                .filter(Boolean);
+            if (!parts.length) return "";
+
+            const blacklist = new Set(["think", "axiom", "about", "the", "a", "an", "of"]);
+            let candidates = parts.filter(w => w.length > 3 && !blacklist.has(w.toLowerCase()));
+            if (!candidates.length) {
+                candidates = parts;
+            }
+            // Prefer the last strong token (often the real subject, e.g. "trump" in "think trump")
+            return candidates[candidates.length - 1].toLowerCase();
+        }
 
         // --- GLOBAL STATE ---
-        let isMuted = false; // Default state: Speaking is ON
-        localStorage.setItem('axiom_muted', isMuted);
+        let isMuted = true; // Default: voice OFF on first load; user can toggle on
         
         function speak(text) {
             const synth = window.speechSynthesis;
             if (!synth || isMuted) return; // Check Muted state before even starting
-            
+
             // If speech is already running, cancel it to prevent overlapping voices
-            synth.cancel(); 
-            
+            synth.cancel();
+
             const utterance = new SpeechSynthesisUtterance(text);
-            
+
             // Robot Calibration
-            utterance.pitch = 0.6; 
-            utterance.rate = 0.9;  
-            
+            utterance.pitch = 0.6;
+            utterance.rate = 0.9;
+
             const voices = synth.getVoices();
             const robotVoice = voices.find(v => v.name.includes("Daniel") || v.name.includes("Google UK English Male"));
             if (robotVoice) utterance.voice = robotVoice;
@@ -425,6 +737,12 @@
             }
         
             log(`INITIATING INFERENCE: "${term}"...`, 'log-cyan');
+            const concept = deriveSearchToken(term);
+            if (concept) {
+                canvasStatus.textContent = `Querying ledger + mesh for "${concept}"...`;
+            } else {
+                canvasStatus.textContent = `Querying ledger + mesh...`;
+            }
             input.value = "";
             input.disabled = true;
         
@@ -446,8 +764,26 @@
                 if (data.response) {
                     log(`AXIOM >> ${data.response}`, 'log-green');
                     speak(data.response); // ACTIVATE THE MOUTH!
+
+                    // In parallel, fetch ledger + mesh results for the canvas.
+                    const options = {
+                        limit: parseInt(resultLimitEl.value, 10) || 20,
+                        exact: exactMatchEl.checked,
+                        includeUncorroborated: includeUncorroboratedEl.checked,
+                    };
+                    if (concept) {
+                        try {
+                            await updateKnowledgeCanvas(activeNode, concept, options);
+                        } catch (e) {
+                            log("WARN: Unable to render full knowledge canvas for this query.", "log-dim");
+                            canvasStatus.textContent = "Canvas update failed for this query.";
+                        }
+                    } else {
+                        canvasStatus.textContent = "Canvas idle. No concept keyword derived from query.";
+                    }
                 } else {
                     log(`QUERY FAILED: No structured response from Node.`, 'log-red');
+                    canvasStatus.textContent = "No response payload from node.";
                 }
         
             } catch (error) {
@@ -462,13 +798,148 @@
                 setTimeout(() => {
                     log("Simulation: Scanning Distributed Hash Table...", "log-cyan");
                 }, 800);
+                canvasStatus.textContent = "Node unreachable. Check connection or bootstrap settings.";
             }
         
             input.disabled = false;
             input.focus();
         }
+
+        async function updateKnowledgeCanvas(nodeUrl, term, options) {
+            const factsUrl = `${nodeUrl}/local_query?term=${encodeURIComponent(term)}&include_uncorroborated=${options.includeUncorroborated}`;
+            const meshUrl = `${nodeUrl}/mesh_query?term=${encodeURIComponent(term)}`;
+
+            const [factsRes, meshRes] = await Promise.allSettled([
+                fetch(factsUrl),
+                fetch(meshUrl),
+            ]);
+
+            let facts = [];
+            if (factsRes.status === "fulfilled" && factsRes.value.ok) {
+                const data = await factsRes.value.json();
+                facts = Array.isArray(data.results) ? data.results : [];
+            }
+
+            let mesh = null;
+            if (meshRes.status === "fulfilled" && meshRes.value.ok) {
+                mesh = await meshRes.value.json();
+            }
+
+            renderFacts(term, facts, options);
+            renderMesh(term, mesh);
+
+            const factCount = facts.length;
+            canvasStatus.textContent = `Canvas ready: ${Math.min(factCount, options.limit)} of ${factCount} fact(s) + lexical mesh for "${term}".`;
+        }
+
+        function formatFactTimestamp(isoUtc, status) {
+            if (!isoUtc) return "";
+            let d;
+            try {
+                d = new Date(isoUtc);
+                if (isNaN(d.getTime())) return "";
+            } catch (e) {
+                return "";
+            }
+            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const weekday = days[d.getUTCDay()];
+            const mon = months[d.getUTCMonth()];
+            const day = d.getUTCDate();
+            const year = d.getUTCFullYear();
+            const dateStr = `${weekday}, ${mon} ${day}, ${year}`;
+            const s = (status || "").toLowerCase();
+            if (s === "trusted") return `On ${dateStr} it was verified that`;
+            if (s === "disputed") return `As of ${dateStr} disputed claims state that`;
+            return `As of ${dateStr} uncorroborated claims state that`;
+        }
+
+        function renderFacts(term, facts, options) {
+            if (!factsPanel) return;
+
+            factsPanel.innerHTML = "";
+
+            let filtered = facts;
+            if (options.exact) {
+                const needle = term.toLowerCase();
+                filtered = facts.filter(f =>
+                    String(f.fact_content || "").toLowerCase().includes(needle)
+                );
+            }
+
+            const limited = filtered.slice(0, options.limit);
+
+            if (!limited.length) {
+                factsPanel.className = "empty-state";
+                factsPanel.textContent = "No ledger matches for this query under current filters.";
+                return;
+            }
+
+            factsPanel.className = "";
+            for (const fact of limited) {
+                const card = document.createElement("div");
+                card.className = "fact-card";
+
+                const status = (fact.status || "unknown").toUpperCase();
+                const trust = fact.trust_score ?? "?";
+                const state = fact.fragment_state || "unknown";
+                const timestampLine = formatFactTimestamp(fact.ingest_timestamp_utc, fact.status);
+
+                let stateLabel = "";
+                if (state === "confirmed_fragment") stateLabel = "FRAGMENT!";
+                else if (state === "suspected_fragment") stateLabel = "FRAGMENT?";
+
+                card.innerHTML = `
+                    <div class="meta">
+                        <span class="tag">[${status}]</span>
+                        <span class="tag">TRUST=${trust}</span>
+                        ${stateLabel ? `<span class="tag">${stateLabel}</span>` : ""}
+                    </div>
+                    ${timestampLine ? `<div class="fact-timestamp">${timestampLine}</div>` : ""}
+                    <div class="content">${fact.fact_content || ""}</div>
+                    <div class="source">${fact.source_url || ""}</div>
+                `;
+                factsPanel.appendChild(card);
+            }
+        }
+
+        function renderMesh(term, mesh) {
+            if (!meshPanel) return;
+
+            meshPanel.innerHTML = "";
+
+            if (!mesh || !mesh.associations || !mesh.associations.length) {
+                meshPanel.className = "empty-state";
+                meshPanel.textContent = "No strong mesh associations found for this query yet.";
+                return;
+            }
+
+            meshPanel.className = "";
+
+            const core = document.createElement("div");
+            core.className = "mesh-node core";
+            core.textContent = term;
+            meshPanel.appendChild(core);
+
+            for (const edge of mesh.associations) {
+                const node = document.createElement("div");
+                node.className = "mesh-node edge";
+                const other =
+                    edge.word_a && edge.word_a.toLowerCase() !== term.toLowerCase()
+                        ? edge.word_a
+                        : edge.word_b;
+                node.textContent = other || "(unknown)";
+
+                const meta = document.createElement("span");
+                meta.className = "mesh-edge-meta";
+                meta.textContent = `${edge.relation_type || "context"} · strength=${edge.strength}`;
+                node.appendChild(meta);
+
+                meshPanel.appendChild(node);
+            }
+        }
         
-        // --- NEW: INITIALIZE MUTE STATE & UI ---
+        // --- INITIALIZE MUTE STATE & UI (voice OFF by default) ---
         window.onload = () => {
             const savedNode = localStorage.getItem("axiom_node_url");
             if (savedNode) {
@@ -476,11 +947,21 @@
                 document.querySelector('.terminal-header span').innerHTML = 
                     `<span class="status-light"></span>CONNECTED: ${displayUrl}`;
             }
-            
-            // Load Mute State from localStorage or default to false (ON)
-            isMuted = localStorage.getItem('axiom_muted') === 'true';
+            const savedMute = localStorage.getItem('axiom_muted');
+            if (savedMute === null) {
+                isMuted = true;
+                localStorage.setItem('axiom_muted', 'true');
+            } else {
+                isMuted = savedMute === 'true';
+            }
             updateMuteButtonDisplay();
             log(`[SYS_INIT] Speech Synthesis: ${isMuted ? 'MUTED' : 'ACTIVE'}`, 'log-dim');
+
+            const guideMd = document.getElementById('user-guide-md');
+            const guideContent = document.getElementById('user-guide-content');
+            if (guideMd && guideContent && typeof marked !== 'undefined') {
+                guideContent.innerHTML = marked.parse(guideMd.textContent.trim());
+            }
         };
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -489,22 +970,6 @@
                     .catch(err => console.log('Axiom SW Failed', err));
             });
         }
-
-        function speak(text) {
-        const synth = window.speechSynthesis;
-        const utterance = new SpeechSynthesisUtterance(text);
-        
-        // Robot Calibration
-        utterance.pitch = 0.6; // Deep
-        utterance.rate = 0.9;  // Deliberate
-        
-        // Select a robotic voice if available
-        const voices = synth.getVoices();
-        const robotVoice = voices.find(v => v.name.includes("Daniel") || v.name.includes("Google UK English Male"));
-        if (robotVoice) utterance.voice = robotVoice;
-
-        synth.speak(utterance);
-    }
     </script>
 </body>
 </html>
