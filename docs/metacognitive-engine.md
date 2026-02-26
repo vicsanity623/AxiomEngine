@@ -13,7 +13,7 @@ Entry point used by the node. It:
 
 ### 2. `prune_integrity_check()`
 
-**Goal:** Remove facts that are both **old** and **low quality** so the ledger doesn’t grow without bound with weak data.
+**Goal:** Remove facts that are both **old** and **low quality or confirmed fragments** so the ledger doesn’t grow without bound with weak data.
 
 **Logic:**
 
@@ -21,16 +21,18 @@ Entry point used by the node. It:
   - **Older than 90 days** (`ingest_timestamp_utc < cutoff`), and  
   - **Low trust** (`trust_score <= 2`).
 - For each such fact:
-  - If **ADL summary is too short** (length &lt; 10): **DELETE** the fact (considered low-integrity / shallow).
+  - If **ADL summary is too short** (length &lt; 10), **or**
+  - If its `fragment_state` is **`confirmed_fragment`**  
+    → **DELETE** the fact (considered low-integrity, stale, or a confirmed fragment).
   - Otherwise: keep it (no delete).
 
 **Constants (in code):**
 
 - `PRUNE_THRESHOLD_DAYS = 90` — only consider facts older than this.
 - `TRUST_SCORE_FOR_PRUNING = 2` — only consider facts with `trust_score <= 2`.
-- `ADL_INTEGRITY_THRESHOLD = 10` — delete only if `len(adl_summary) < 10`.
+- `ADL_INTEGRITY_THRESHOLD = 10` — delete only if `len(adl_summary) < 10` **or** confirmed fragment.
 
-So in practice it **deletes** old, low-trust facts that also have a very short (or empty) ADL summary.
+So in practice it **deletes** old, low-trust facts that either have a very short (or empty) ADL summary or have been promoted to `confirmed_fragment` by the fragment analysis pipeline.
 
 ### 3. `retrieve_adl_based_answer(query_atoms)` (placeholder)
 
@@ -48,7 +50,7 @@ metacognitive_engine.run_metacognitive_cycle()
 _prune_ledger()
 ```
 
-So you **use it** by running the node as usual; you don’t call it manually unless you’re scripting or testing.
+So you **use it** by running the node as usual; you don’t call it manually unless you’re scripting or testing. Fragment classification is refined by the idle fragment audit task; once a stale, low‑trust fact is marked `confirmed_fragment`, the metacognitive engine is responsible for actually deleting it.
 
 ---
 
@@ -79,10 +81,10 @@ uv run pytest tests/test_metacognitive_engine.py -v
 
 ## Summary
 
-| Piece                         | Role                                                                 |
-|------------------------------|----------------------------------------------------------------------|
-| `run_metacognitive_cycle()`  | Entry point; runs prune check + logs “synapse refinement initiated”. |
-| `prune_integrity_check()`    | Deletes facts that are &gt;90 days old, trust_score ≤ 2, and ADL length &lt; 10. |
-| `retrieve_adl_based_answer()`| Placeholder; no behavior yet.                                       |
+| Piece                         | Role                                                                                                  |
+|------------------------------|-------------------------------------------------------------------------------------------------------|
+| `run_metacognitive_cycle()`  | Entry point; runs prune check + logs “synapse refinement initiated”.                                  |
+| `prune_integrity_check()`    | Deletes facts that are &gt;90 days old, trust_score ≤ 2, and either ADL length &lt; 10 or `confirmed_fragment`. |
+| `retrieve_adl_based_answer()`| Placeholder; no behavior yet.                                                                          |
 
-You **use** it by running the node; you **test** it via logs or via the unit test that patches the DB and checks pruning behavior.
+You **use** it by running the node; you **test** it via logs or via the unit test that patches the DB and checks pruning + fragment behavior.

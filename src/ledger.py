@@ -36,7 +36,8 @@ def initialize_database(db_path: str = DEFAULT_DB_PATH):
     cursor = conn.cursor()
     logger.info(f"[Ledger] Initializing and verifying database schema at: {db_path}...")
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS facts (
             fact_id TEXT PRIMARY KEY,
             fact_content BLOB NOT NULL,  /* CHANGED to BLOB for ZLIB compressed data */
@@ -47,9 +48,13 @@ def initialize_database(db_path: str = DEFAULT_DB_PATH):
             corroborating_sources TEXT,
             contradicts_fact_id TEXT,
             lexically_processed INTEGER DEFAULT 0,
-            adl_summary TEXT DEFAULT '' /* <-- NEW COLUMN FOR AXIOM'S SHORTHAND */
+            adl_summary TEXT DEFAULT '', /* <-- NEW COLUMN FOR AXIOM'S SHORTHAND */
+            fragment_state TEXT NOT NULL DEFAULT 'unknown',  /* Heuristic fragment classification */
+            fragment_score REAL NOT NULL DEFAULT 0.0,        /* Confidence that this is a fragment */
+            fragment_reason TEXT                             /* Human-readable reason for classification */
         )
-    """)
+    """
+    )
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fact_relationships (
@@ -93,13 +98,102 @@ def initialize_database(db_path: str = DEFAULT_DB_PATH):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_lexicon_word ON lexicon(word)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_synapse_a ON synapses(word_a)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_synapse_b ON synapses(word_b)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_facts_processed ON facts(lexically_processed)")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_facts_processed ON facts(lexically_processed)"
+    )
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height)")
 
+    # Lightweight migration for existing ledgers that predate fragment columns.
+    # SQLite lacks IF NOT EXISTS for columns, so we attempt ALTERs defensively.
+    try:
+        cursor.execute(
+            "ALTER TABLE facts ADD COLUMN fragment_state TEXT NOT NULL DEFAULT 'unknown'"
+        )
+    except Exception:
+        pass
+    try:
+        cursor.execute(
+            "ALTER TABLE facts ADD COLUMN fragment_score REAL NOT NULL DEFAULT 0.0"
+        )
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE facts ADD COLUMN fragment_reason TEXT")
+    except Exception:
+        pass
+
+    # Only attempt to create the fragment_state index after we are sure the
+    # column exists (or the ALTERs above have safely failed on older schemas).
+    try:
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_facts_fragment_state ON facts(fragment_state)"
+        )
+    except Exception:
+        # If the column truly doesn't exist yet, skip index creation for now.
+        # On next startup after a successful ALTER this will succeed.
+        pass
 
     conn.commit()
     conn.close()
-    logger.info(f"\033[92m[Ledger] Database schema initialized/verified for {db_path}.\033[0m")
+    logger.info(
+        f"\033[92m[Ledger] Database schema initialized/verified for {db_path}.\033[0m"
+    )
+
+
+def migrate_fact_content_to_compressed(
+    db_path: str = DEFAULT_DB_PATH,
+) -> None:
+    """
+    Optional self-healing migration.
+
+    Ensures all rows in `facts.fact_content` are stored as compressed BLOBs.
+    Any legacy plaintext rows (e.g. inserted before compression was enforced
+    or via older P2P paths) are converted in-place.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Only touch rows where SQLite reports a non-BLOB type.
+        cursor.execute(
+            "SELECT fact_id, fact_content FROM facts WHERE typeof(fact_content) != 'blob'"
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            conn.close()
+            return
+
+        migrated = 0
+        for fact_id, raw in rows:
+            if raw is None:
+                continue
+            # For safety, coerce whatever we have to text before compressing.
+            text = raw if isinstance(raw, str) else str(raw)
+            if not text:
+                continue
+            try:
+                compressed = zlib.compress(text.encode("utf-8"))
+            except Exception as e:
+                logger.warning(
+                    f"[Ledger] Could not compress legacy fact {fact_id[:8]} in {db_path}: {e}"
+                )
+                continue
+            cursor.execute(
+                "UPDATE facts SET fact_content = ? WHERE fact_id = ?",
+                (compressed, fact_id),
+            )
+            migrated += 1
+
+        if migrated:
+            conn.commit()
+            logger.info(
+                f"\033[93m[Ledger] Migrated {migrated} legacy fact(s) to compressed storage for {db_path}.\033[0m"
+            )
+        conn.close()
+    except Exception as e:
+        logger.warning(
+            f"[Ledger] Fact compression migration skipped for {db_path}: {e}"
+        )
 
 
 def get_all_facts_for_analysis(db_path: str = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
@@ -122,7 +216,10 @@ def insert_uncorroborated_fact(
     fact_content,
     source_url,
     adl_summary="",
-    db_path: str = DEFAULT_DB_PATH, # <-- ADDED db_path
+    fragment_state: str = "unknown",
+    fragment_score: float = 0.0,
+    fragment_reason: str | None = None,
+    db_path: str = DEFAULT_DB_PATH,  # <-- ADDED db_path
 ):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -131,10 +228,30 @@ def insert_uncorroborated_fact(
     try:
         cursor.execute(
             """
-            INSERT INTO facts (fact_id, fact_content, source_url, ingest_timestamp_utc, trust_score, status, adl_summary)
-            VALUES (?, ?, ?, ?, 1, 'uncorroborated', ?)
+            INSERT INTO facts (
+                fact_id,
+                fact_content,
+                source_url,
+                ingest_timestamp_utc,
+                trust_score,
+                status,
+                adl_summary,
+                fragment_state,
+                fragment_score,
+                fragment_reason
+            )
+            VALUES (?, ?, ?, ?, 1, 'uncorroborated', ?, ?, ?, ?)
         """,
-            (fact_id, compressed_content, source_url, timestamp, adl_summary),
+            (
+                fact_id,
+                compressed_content,
+                source_url,
+                timestamp,
+                adl_summary,
+                fragment_state,
+                float(fragment_score or 0.0),
+                fragment_reason,
+            ),
         )
         conn.commit()
         return {

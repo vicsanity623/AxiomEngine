@@ -52,7 +52,7 @@ def prune_integrity_check(db_path: str):
     try:
         cursor.execute(
             """
-            SELECT fact_id, adl_summary, trust_score, ingest_timestamp_utc
+            SELECT fact_id, adl_summary, trust_score, ingest_timestamp_utc, fragment_state
             FROM facts 
             WHERE ingest_timestamp_utc < ? 
             AND trust_score <= ?
@@ -66,10 +66,12 @@ def prune_integrity_check(db_path: str):
 
         for record in stale_records:
             fact_id = record["fact_id"]
-            adl = record.get("adl_summary", "")
+            adl = record.get("adl_summary", "") or ""
+            fragment_state = record.get("fragment_state", "unknown")
 
-            # Pruning Rule: Delete if ADL is too short OR if it's just a weak/old fact
-            if len(adl) < ADL_INTEGRITY_THRESHOLD:
+            # Pruning Rule: Delete if ADL is too short OR it has been
+            # consistently classified as a fragment on an old, low-trust fact.
+            if len(adl) < ADL_INTEGRITY_THRESHOLD or fragment_state == "confirmed_fragment":
                 logger.debug(
                     f"[Meta-Prune] Deleting ID {fact_id[:8]} (ADL too shallow: {len(adl)} chars)",
                 )

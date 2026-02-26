@@ -84,6 +84,33 @@ def print_stats(db_path: str):
             )
             print(f"{color}{label.ljust(20)}: {count}{RESET}")
 
+        # Optional fragment statistics (available on newer schemas).
+        try:
+            cur.execute(
+                "SELECT fragment_state, COUNT(*) FROM facts GROUP BY fragment_state"
+            )
+            frag_rows = cur.fetchall()
+            if frag_rows:
+                frag_counts = {
+                    "unknown": 0,
+                    "suspected_fragment": 0,
+                    "confirmed_fragment": 0,
+                    "rejected_fragment": 0,
+                }
+                for state, count in frag_rows:
+                    if state in frag_counts:
+                        frag_counts[state] = count
+                print()
+                print(
+                    f"{PINK}{'fragments (suspect)'.ljust(20)}: {frag_counts['suspected_fragment']}{RESET}"
+                )
+                print(
+                    f"{PINK}{'fragments (confirmed)'.ljust(20)}: {frag_counts['confirmed_fragment']}{RESET}"
+                )
+        except Exception:
+            # Older ledgers without fragment columns: silently skip.
+            pass
+
     except Exception as e:
         print(f"Error reading stats: {e}")
     finally:
@@ -148,26 +175,45 @@ def print_facts(db_path: str, limit=20): # <-- Added db_path
 
     for row in rows:
         r = dict(row)
-        
-        status = r['status']
-        color = GREEN if status == 'trusted' else (RED if status == 'disputed' else GRAY)
-        
+
+        status = r["status"]
+        color = (
+            GREEN if status == "trusted" else (RED if status == "disputed" else GRAY)
+        )
+
         # --- DECOMPRESS CONTENT HERE (Crucial Step) ---
         try:
             # The content is now a compressed BLOB (bytes) from ledger.py
-            fact_content = zlib.decompress(r['fact_content']).decode('utf-8')
+            fact_content = zlib.decompress(r["fact_content"]).decode("utf-8")
         except (TypeError, zlib.error):
-            fact_content = f"ERROR: Could not decompress fact content (ID: {r['fact_id'][:8]})."
-            
-        # Indicator for brain processing
-        processed = f"{PINK}◈{RESET}" if r.get('lexically_processed') else f"{GRAY}◇{RESET}"
-        
-        # Calculate word count and check for fragmentation using the DECOMPRESSED text
-        word_count = len(fact_content.split())
-        integrity = f"{GREEN}COMPLETE{RESET}" if word_count > 8 else f"{RED}FRAGMENT?{RESET}"
+            fact_content = (
+                f"ERROR: Could not decompress fact content (ID: {r['fact_id'][:8]})."
+            )
 
-        print(f"{color}[{status.upper()}]{RESET} {processed} Trust: {r['trust_score']} | Words: {word_count} | {integrity}")
-        print(f"   {fact_content}") # Print the DECOMPRESSED content
+        # Indicator for brain processing
+        processed = (
+            f"{PINK}◈{RESET}" if r.get("lexically_processed") else f"{GRAY}◇{RESET}"
+        )
+
+        # Calculate word count and derive fragment indicator using stored metadata when available.
+        word_count = len(fact_content.split())
+        frag_state = r.get("fragment_state", "unknown")
+        frag_score = r.get("fragment_score", 0.0) or 0.0
+
+        if frag_state == "confirmed_fragment":
+            integrity = f"{RED}FRAGMENT!{RESET}"
+        elif frag_state == "suspected_fragment" or frag_score >= 0.5:
+            integrity = f"{RED}FRAGMENT?{RESET}"
+        else:
+            # Legacy heuristic fallback on very short sentences.
+            integrity = (
+                f"{GREEN}COMPLETE{RESET}" if word_count > 8 else f"{RED}FRAGMENT?{RESET}"
+            )
+
+        print(
+            f"{color}[{status.upper()}]{RESET} {processed} Trust: {r['trust_score']} | Words: {word_count} | {integrity}"
+        )
+        print(f"   {fact_content}")  # Print the DECOMPRESSED content
         print(f"   {GRAY}Source: {r['source_url']}{RESET}")
         print("")
 

@@ -104,7 +104,8 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
                 continue
 
         for fact in new_facts_payload:
-            if not verify_hash(fact.get("fact_content"), fact.get("fact_id")):
+            content_text = fact.get("fact_content") or ""
+            if not verify_hash(content_text, fact.get("fact_id")):
                 logger.warning(
                     f"\033[91m[P2P Security] WARNING: Peer {peer_url} sent invalid hash. Dropping.\033[0m",
                 )
@@ -114,6 +115,13 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
             sanitized_trust = min(incoming_trust, 0.5)
 
             try:
+                try:
+                    compressed_content = zlib.compress(content_text.encode("utf-8"))
+                except Exception as e:
+                    logger.warning(
+                        f"\033[91m[P2P Sync] Could not compress incoming fact {fact.get('fact_id', '')[:8]} from {peer_url}: {e}\033[0m"
+                    )
+                    continue
                 cursor.execute(
                     """
                     INSERT INTO facts (fact_id, fact_content, source_url, ingest_timestamp_utc, trust_score, status)
@@ -121,7 +129,7 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
                 """,
                     (
                         fact["fact_id"],
-                        fact["fact_content"], # Assuming fact_content here is already the ZLIB BLOB from the peer
+                        compressed_content,
                         fact.get("source_url", "unknown_peer"),
                         fact.get("ingest_timestamp_utc"),
                         sanitized_trust,

@@ -163,6 +163,64 @@ def _contains_named_entity(doc):
     return _count_named_entities(doc) >= 1
 
 
+def _compute_fragment_metadata(doc, raw_sent: str):
+    """
+    Heuristic fragment scoring with NO model calls beyond the provided doc.
+
+    This is intentionally simple and deterministic:
+    - Short sentences and lack of named entities are treated as more fragment-like.
+    - Pronoun-leading sentences without obvious antecedent are suspicious.
+    """
+    text = (raw_sent or "").strip()
+    if not text:
+        return 1.0, "confirmed_fragment", "empty"
+
+    words = text.split()
+    word_count = len(words)
+    lower = text.lower()
+    score = 0.0
+    reason_parts = []
+
+    # Very short sentences are likely out of context.
+    if word_count <= 8:
+        score += 0.6
+        reason_parts.append("short_sentence")
+    elif word_count <= 12:
+        score += 0.3
+        reason_parts.append("moderately_short")
+
+    # No named entities → more likely to be vague filler.
+    if not _contains_named_entity(doc):
+        score += 0.25
+        reason_parts.append("no_named_entities")
+
+    # Pronoun-leading sentences often rely heavily on previous context.
+    pronoun_starts = ("he ", "she ", "they ", "it ", "this ", "that ", "these ", "those ")
+    if any(lower.startswith(p) for p in pronoun_starts):
+        score += 0.25
+        reason_parts.append("pronoun_start")
+
+    # Odd punctuation or casing.
+    if not text.endswith((".", "!", "?")):
+        score += 0.15
+        reason_parts.append("nonterminal_punctuation")
+    if text and text[0].islower():
+        score += 0.1
+        reason_parts.append("lowercase_start")
+
+    score = max(0.0, min(1.0, score))
+
+    if score >= 0.8:
+        state = "suspected_fragment"
+    elif score >= 0.5:
+        state = "suspected_fragment"
+    else:
+        state = "unknown"
+
+    reason = ",".join(reason_parts) if reason_parts else ""
+    return score, state, reason
+
+
 def _check_for_contradiction(new_doc, all_existing_facts):
     """Scans the ledger for direct contradictions.
     Logic: Same Subject + Same Verb + One is Negated ('not') vs One is Positive.
@@ -277,16 +335,23 @@ def extract_facts_from_text(source_url, text_content):
             continue
             
         fact_id = hashlib.sha256(raw_sent.encode("utf-8")).hexdigest()
-        
-        # --- GENERATE ADL ---
+
+        # --- GENERATE ADL & fragment metadata ---
         adl_summary = _generate_adl_summary(sent_doc)
-        
+        fragment_score, fragment_state, fragment_reason = _compute_fragment_metadata(
+            sent_doc,
+            raw_sent,
+        )
+
         # --- CORRECTED: Call insert_uncorroborated_fact ONCE with all data ---
         result = insert_uncorroborated_fact(
-            fact_id, 
-            raw_sent, 
-            source_url, 
-            adl_summary=adl_summary # <-- ADL is now correctly passed
+            fact_id,
+            raw_sent,
+            source_url,
+            adl_summary=adl_summary,  # <-- ADL is now correctly passed
+            fragment_state=fragment_state,
+            fragment_score=fragment_score,
+            fragment_reason=fragment_reason,
         )
         
         if result:

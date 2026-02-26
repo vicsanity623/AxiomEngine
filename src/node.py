@@ -41,6 +41,7 @@ from src.ledger import (
     get_unprocessed_facts_for_lexicon,
     initialize_database,
     mark_fact_as_processed,
+    migrate_fact_content_to_compressed,
 )
 from src.blockchain import create_block, get_blocks_after, get_chain_head
 from src.p2p import sync_chain_with_peer, sync_with_peer
@@ -122,6 +123,10 @@ class AxiomNode:
         self.idle_tick_interval = float(
             os.environ.get("AXIOM_IDLE_TICK_INTERVAL", "1.0")
         )
+        # How often to run the full idle suite (coarse-grained grouping of idle tasks).
+        self.idle_suite_interval = float(
+            os.environ.get("AXIOM_IDLE_SUITE_INTERVAL", "150.0")
+        )
 
         # Idle task registry state.
         self.idle_tasks = []
@@ -142,6 +147,12 @@ class AxiomNode:
         self._last_health_snapshot_ts = 0.0
         self._self_check_results = []
         self._last_self_check_ts = 0.0
+        self._last_main_cycle_ts = 0.0
+        self._last_fragment_audit_ts = 0.0
+        self._idle_throttle_log = {}
+        self._idle_suite_header_active = False
+        self.node_role = "bootstrap" if port == 8009 else "peer"
+
         if port == 8009:
             # Bootstrap node must always use the canonical database name
             self.db_path = os.environ.get("AXIOM_DB_PATH", "axiom_ledger.db")
@@ -151,6 +162,8 @@ class AxiomNode:
             self.db_path = os.environ.get("AXIOM_DB_PATH", default_db_name)
 
         initialize_database(self.db_path)
+        # Optional self-healing migration to keep fact storage consistent.
+        migrate_fact_content_to_compressed(self.db_path)
         self.search_ledger_for_api = search_ledger_for_api
 
         # Register built-in idle tasks.
@@ -158,6 +171,7 @@ class AxiomNode:
         self.idle_tasks.append(self._idle_conversation_training)
         self.idle_tasks.append(self._idle_code_introspection)
         self.idle_tasks.append(self._idle_data_quality)
+        self.idle_tasks.append(self._idle_fragment_audit)
         self.idle_tasks.append(self._idle_health_snapshot)
         self.idle_tasks.append(self._idle_self_checks)
 
@@ -179,13 +193,20 @@ class AxiomNode:
                     self.db_path,
                 )
                 self._update_reputation(peer_url, sync_status, len(new_facts))
-                
                 # Check chain sync result
-                appended, peer_height = sync_chain_with_peer(self, peer_url, self.db_path)
+                appended, peer_height = sync_chain_with_peer(
+                    self,
+                    peer_url,
+                    self.db_path,
+                )
                 if appended > 0 or (peer_height > get_chain_head(self.db_path)[1]):
                     chain_updated = True
-            except:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "[Init] Error during bootstrap sync with %s: %s",
+                    peer_url,
+                    e,
+                )
         return chain_updated
 
     def print_mesh_status(self, force: bool = False):
@@ -258,8 +279,12 @@ class AxiomNode:
                 )
                 self._update_reputation(peer_url, sync_status, len(new_facts))
                 self.print_mesh_status()
-            except:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "[Mesh] Immediate handshake with %s failed: %s",
+                    peer_url,
+                    e,
+                )
 
         threading.Thread(target=immediate_handshake, daemon=True).start()
 
@@ -332,8 +357,17 @@ class AxiomNode:
         try:
             # Throttle heavy idle learning so it does not run on every tick.
             now = time.time()
-            if now - self._last_idle_learning_ts < 300:
+            interval = 300.0
+            if now - self._last_idle_learning_ts < interval:
+                self._maybe_log_idle_throttle(
+                    "learning",
+                    interval,
+                    now,
+                    self._last_idle_learning_ts,
+                )
                 return
+
+            self._ensure_idle_suite_header()
 
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -356,7 +390,8 @@ class AxiomNode:
                     sample.append({"fact_id": row["fact_id"], "fact_content": text})
             if sample:
                 logger.info(
-                    "\033[2m[Idle] Relationship rediscovery: re-linking %d facts against full ledger...\033[0m",
+                    "\033[2m[Idle:%s] Relationship rediscovery: re-linking %d facts against full ledger...\033[0m",
+                    self.port,
                     len(sample),
                 )
                 synthesizer.link_related_facts(sample, db_path=self.db_path)
@@ -379,16 +414,18 @@ class AxiomNode:
                     reinforced += 1
             if reinforced:
                 logger.info(
-                    "\033[2m[Idle] Synapse reinforcement: re-integrated %d high-trust fact(s) into mesh.\033[0m",
+                    "\033[2m[Idle:%s] Synapse reinforcement: re-integrated %d high-trust fact(s) into mesh.\033[0m",
+                    self.port,
                     reinforced,
                 )
             # Only mark as run if we reached the end without early return.
             self._last_idle_learning_ts = now
         except Exception as e:
-            logger.info("[Idle] Learning cycle skipped: %s", e)
+            logger.info("[Idle:%s] Learning cycle skipped: %s", self.port, e)
 
     def _run_main_cycle(self):
         """One full main cycle: fetch topics, integrate facts, sync peers, and housekeeping."""
+        self._last_main_cycle_ts = time.time()
         logger.info("\033[2m[AXIOM ENGINE CYCLE START]\033[0m")
         newly_created_facts = []
         try:
@@ -448,8 +485,12 @@ class AxiomNode:
                     len(new_facts),
                 )
                 sync_chain_with_peer(self, peer_url, self.db_path)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "[P2P Sync] Background sync with %s failed: %s",
+                    peer_url,
+                    e,
+                )
 
         self._reflection_cycle()
         metacognitive_engine.run_metacognitive_cycle(self.db_path)
@@ -484,8 +525,10 @@ class AxiomNode:
 
         # Log occasionally when we make progress.
         if upper == len(self._conversation_patterns):
+            self._ensure_idle_suite_header()
             logger.info(
-                "[Idle-Conv] Conversation patterns ready: %d",
+                "[Idle-Conv:%s] Conversation patterns ready: %d",
+                self.port,
                 len(self._conversation_patterns),
             )
 
@@ -497,8 +540,17 @@ class AxiomNode:
         """
         now = time.time()
         # Run at most once per hour.
-        if now - self._last_code_introspection_ts < 3600:
+        interval = 3600.0
+        if now - self._last_code_introspection_ts < interval:
+            self._maybe_log_idle_throttle(
+                "code",
+                interval,
+                now,
+                self._last_code_introspection_ts,
+            )
             return
+
+        self._ensure_idle_suite_header()
 
         src_root = os.path.dirname(os.path.abspath(__file__))
         try:
@@ -507,12 +559,13 @@ class AxiomNode:
             self._endpoint_registry = build_endpoint_registry(node_path)
             self._last_code_introspection_ts = now
             logger.info(
-                "[Idle-Code] Refreshed code map (%d modules, %d endpoints).",
+                "[Idle-Code:%s] Refreshed code map (%d modules, %d endpoints).",
+                self.port,
                 len(self._code_map or {}),
                 len(self._endpoint_registry or []),
             )
         except Exception as e:
-            logger.info("[Idle-Code] Code introspection skipped: %s", e)
+            logger.info("[Idle-Code:%s] Code introspection skipped: %s", self.port, e)
 
     def _idle_data_quality(self):
         """
@@ -522,8 +575,17 @@ class AxiomNode:
         """
         now = time.time()
         # Run at most once every 15 minutes.
-        if now - self._last_data_quality_ts < 900:
+        interval = 900.0
+        if now - self._last_data_quality_ts < interval:
+            self._maybe_log_idle_throttle(
+                "data",
+                interval,
+                now,
+                self._last_data_quality_ts,
+            )
             return
+
+        self._ensure_idle_suite_header()
 
         try:
             dupes = find_duplicate_candidates(self.db_path, sample_size=300)
@@ -532,12 +594,13 @@ class AxiomNode:
             self._conflict_summary = conflicts
             self._last_data_quality_ts = now
             logger.info(
-                "[Idle-Data] Sampled data quality: %d duplicate groups, %d conflict groups.",
+                "[Idle-Data:%s] Sampled data quality: %d duplicate groups, %d conflict groups.",
+                self.port,
                 len(dupes),
                 len(conflicts),
             )
         except Exception as e:
-            logger.info("[Idle-Data] Data quality scan skipped: %s", e)
+            logger.info("[Idle-Data:%s] Data quality scan skipped: %s", self.port, e)
 
     def _idle_health_snapshot(self):
         """
@@ -545,17 +608,41 @@ class AxiomNode:
         """
         now = time.time()
         # Run at most once every 10 minutes.
-        if now - self._last_health_snapshot_ts < 600:
+        interval = 600.0
+        if now - self._last_health_snapshot_ts < interval:
+            self._maybe_log_idle_throttle(
+                "health",
+                interval,
+                now,
+                self._last_health_snapshot_ts,
+            )
             return
+
+        self._ensure_idle_suite_header()
+
         try:
             self._health_snapshot = compute_health_snapshot(self.db_path)
             self._last_health_snapshot_ts = now
             logger.info(
-                "[Idle-Health] Updated health snapshot: %s",
+                "[Idle-Health:%s] Updated health snapshot: %s",
+                self.port,
                 self._health_snapshot,
             )
+            try:
+                total_facts = int(self._health_snapshot.get("total_facts", 0))
+                total_blocks = int(self._health_snapshot.get("total_blocks", 0))
+                if total_blocks > 0 and total_facts == 0:
+                    logger.warning(
+                        "[Idle-Health:%s] Anomaly detected: chain has %d block(s) but facts table is empty for db %s.",
+                        self.port,
+                        total_blocks,
+                        self.db_path,
+                    )
+            except Exception:
+                # Never allow anomaly checks to break idle cycles.
+                pass
         except Exception as e:
-            logger.info("[Idle-Health] Health snapshot skipped: %s", e)
+            logger.info("[Idle-Health:%s] Health snapshot skipped: %s", self.port, e)
 
     def _idle_self_checks(self):
         """
@@ -563,19 +650,210 @@ class AxiomNode:
         """
         now = time.time()
         # Run at most once every 3 hours.
-        if now - self._last_self_check_ts < 10800:
+        interval = 10800.0
+        if now - self._last_self_check_ts < interval:
+            self._maybe_log_idle_throttle(
+                "selfcheck",
+                interval,
+                now,
+                self._last_self_check_ts,
+            )
             return
+
+        self._ensure_idle_suite_header()
+
         # Use the local self_url to avoid any external DNS/network dependency.
         base_url = self.self_url
         try:
             self._self_check_results = run_self_checks(base_url)
             self._last_self_check_ts = now
             logger.info(
-                "[Idle-SelfCheck] Completed self-checks: %s",
+                "[Idle-SelfCheck:%s] Completed self-checks: %s",
+                self.port,
                 self._self_check_results,
             )
         except Exception as e:
-            logger.info("[Idle-SelfCheck] Self-checks skipped: %s", e)
+            logger.info("[Idle-SelfCheck:%s] Self-checks skipped: %s", self.port, e)
+
+    def _idle_fragment_audit(self):
+        """
+        Periodically scan a small sample of facts to refine fragment
+        classification and, when appropriate, seek simple consensus
+        from peers about low-quality fragments.
+        """
+        now = time.time()
+        interval = 300.0  # 5 minutes between audits per node
+        if now - self._last_fragment_audit_ts < interval:
+            self._maybe_log_idle_throttle(
+                "fragment_audit",
+                interval,
+                now,
+                self._last_fragment_audit_ts,
+            )
+            return
+
+        self._ensure_idle_suite_header()
+
+        import sqlite3 as _sqlite3
+
+        try:
+            conn = _sqlite3.connect(self.db_path)
+            conn.row_factory = _sqlite3.Row
+            cur = conn.cursor()
+
+            # Sample a bounded number of candidate facts.
+            cur.execute(
+                """
+                SELECT fact_id, fact_content, fragment_state, fragment_score, status
+                FROM facts
+                WHERE status != 'disputed'
+                ORDER BY RANDOM()
+                LIMIT 40
+                """
+            )
+            rows = cur.fetchall()
+            if not rows:
+                conn.close()
+                self._last_fragment_audit_ts = now
+                return
+
+            import zlib as _zlib
+
+            updated = 0
+            for row in rows:
+                fact_id = row["fact_id"]
+                fragment_state = row["fragment_state"] or "unknown"
+                fragment_score = float(row["fragment_score"] or 0.0)
+
+                raw = row["fact_content"]
+                try:
+                    text = (
+                        _zlib.decompress(raw).decode("utf-8")
+                        if isinstance(raw, (bytes, bytearray))
+                        else (raw or "")
+                    )
+                except Exception:
+                    continue
+
+                text = text.strip()
+                if not text:
+                    continue
+
+                words = text.split()
+                word_count = len(words)
+                lower = text.lower()
+
+                # Simple, model-free heuristic refinement.
+                score = 0.0
+                reasons = []
+                if word_count <= 8:
+                    score += 0.6
+                    reasons.append("short_sentence")
+                elif word_count <= 12:
+                    score += 0.3
+                    reasons.append("moderately_short")
+
+                pronoun_starts = (
+                    "he ",
+                    "she ",
+                    "they ",
+                    "it ",
+                    "this ",
+                    "that ",
+                    "these ",
+                    "those ",
+                )
+                if any(lower.startswith(p) for p in pronoun_starts):
+                    score += 0.25
+                    reasons.append("pronoun_start")
+
+                if not text.endswith((".", "!", "?")):
+                    score += 0.15
+                    reasons.append("nonterminal_punctuation")
+
+                score = max(0.0, min(1.0, score))
+
+                new_state = fragment_state
+                if score >= 0.8:
+                    new_state = "suspected_fragment"
+                elif score >= 0.5:
+                    if fragment_state == "unknown":
+                        new_state = "suspected_fragment"
+                else:
+                    # If we previously suspected a fragment but evidence is weak, release it.
+                    if fragment_state in ("suspected_fragment", "confirmed_fragment"):
+                        new_state = "rejected_fragment"
+
+                # Lightweight peer consensus: if all sampled peers either
+                # do not know this fact or also treat it as fragment-like,
+                # we may bump it to confirmed_fragment.
+                if new_state == "suspected_fragment" and self.peers:
+                    positives = 0
+                    negatives = 0
+                    headers = {"X-Axiom-Peer": self.advertised_url}
+                    for peer_url in list(self.peers.keys())[:3]:
+                        try:
+                            resp = requests.get(
+                                f"{peer_url}/fragment_opinion",
+                                params={"fact_id": fact_id},
+                                timeout=3,
+                                headers=headers,
+                            )
+                            if resp.status_code != 200:
+                                continue
+                            data = resp.json()
+                            if not data.get("seen"):
+                                positives += 1
+                                continue
+                            peer_state = data.get("fragment_state") or "unknown"
+                            peer_status = data.get("status")
+                            peer_trust = float(data.get("trust_score", 0.0) or 0.0)
+                            if peer_state in ("suspected_fragment", "confirmed_fragment"):
+                                positives += 1
+                            elif peer_state == "rejected_fragment" or (
+                                peer_status == "trusted" and peer_trust >= 2
+                            ):
+                                negatives += 1
+                        except Exception:
+                            continue
+
+                    if positives > 0 and negatives == 0:
+                        new_state = "confirmed_fragment"
+                    elif negatives > 0 and positives == 0:
+                        new_state = "rejected_fragment"
+
+                if (
+                    new_state != fragment_state
+                    or abs(score - fragment_score) > 0.05
+                ):
+                    cur.execute(
+                        """
+                        UPDATE facts
+                        SET fragment_state = ?, fragment_score = ?, fragment_reason = ?
+                        WHERE fact_id = ?
+                        """,
+                        (
+                            new_state,
+                            score,
+                            ",".join(reasons) if reasons else None,
+                            fact_id,
+                        ),
+                    )
+                    updated += 1
+
+            if updated:
+                conn.commit()
+                logger.info(
+                    "[Idle-Fragment:%s] Audited %d fact(s); updated classifications for %d.",
+                    self.port,
+                    len(rows),
+                    updated,
+                )
+
+            conn.close()
+            self._last_fragment_audit_ts = now
+        except Exception as e:
+            logger.info("[Idle-Fragment:%s] Fragment audit skipped: %s", self.port, e)
 
     # --- Helpers for meta-commands exposed via /think ---
 
@@ -618,13 +896,40 @@ class AxiomNode:
         height = snap.get("chain_height", 0)
         avg_trust = snap.get("avg_trust_score")
         status_counts = snap.get("status_counts", {})
+        role_label = f"{self.node_role} node"
         parts = [
+            f"Node {self.port} ({role_label}) at {self.advertised_url}.",
             f"Facts: {total}, Blocks: {blocks}, Chain height: {height}.",
             f"Status counts: {status_counts}.",
         ]
         if avg_trust is not None:
             parts.append(f"Average trust score: {avg_trust:.3f}.")
         return " ".join(parts)
+
+    def get_idle_state(self) -> dict:
+        """
+        Introspect idle scheduling and last-run timestamps for debugging.
+        """
+        now = time.time()
+
+        def age(ts: float) -> float | None:
+            return None if not ts else max(0.0, now - ts)
+
+        return {
+            "node_port": self.port,
+            "node_role": self.node_role,
+            "advertised_url": self.advertised_url,
+            "db_path": self.db_path,
+            "main_cycle_interval_sec": self.main_cycle_interval,
+            "idle_suite_interval_sec": self.idle_suite_interval,
+            "last_main_cycle_age_sec": age(self._last_main_cycle_ts),
+            "last_idle_learning_age_sec": age(self._last_idle_learning_ts),
+            "last_code_introspection_age_sec": age(self._last_code_introspection_ts),
+            "last_data_quality_age_sec": age(self._last_data_quality_ts),
+            "last_health_snapshot_age_sec": age(self._last_health_snapshot_ts),
+            "last_self_check_age_sec": age(self._last_self_check_ts),
+            "last_fragment_audit_age_sec": age(self._last_fragment_audit_ts),
+        }
 
     def _run_idle_tick(self):
         """Run a single idle task, if any are registered."""
@@ -635,19 +940,89 @@ class AxiomNode:
         try:
             task()
         except Exception as e:
-            logger.info("[Idle] Task %s skipped: %s", getattr(task, "__name__", "unknown"), e)
+            logger.info(
+                "[Idle] Task %s skipped: %s",
+                getattr(task, "__name__", "unknown"),
+                e,
+            )
+
+    def _run_idle_suite(self):
+        """
+        Run all registered idle tasks in a fixed sequence so their logs
+        appear grouped together for easier debugging.
+        """
+        if not self.idle_tasks:
+            return
+        self._idle_suite_header_active = False
+        for task in self.idle_tasks:
+            try:
+                task()
+            except Exception as e:
+                logger.info(
+                    "[Idle] Task %s skipped: %s",
+                    getattr(task, "__name__", "unknown"),
+                    e,
+                )
+        if self._idle_suite_header_active:
+            logger.info("[Idle-Suite:%s] End.", self.port)
+
+    def _maybe_log_idle_throttle(
+        self,
+        name: str,
+        interval: float,
+        now: float,
+        last_run_ts: float,
+    ):
+        """
+        Log (at debug level) that an idle task is being throttled, but
+        rate-limit those logs so they do not flood the console.
+        """
+        last_log_ts = self._idle_throttle_log.get(name, 0.0)
+        # At most once per 60s per task.
+        if now - last_log_ts < 60.0:
+            return
+        elapsed = now - last_run_ts if last_run_ts else 0.0
+        remaining = max(0.0, interval - elapsed)
+        logger.debug(
+            "[Idle-%s:%s] Throttled; next eligible in %.0fs (elapsed %.0fs).",
+            name,
+            self.port,
+            remaining,
+            elapsed,
+        )
+        self._idle_throttle_log[name] = now
+
+    def _ensure_idle_suite_header(self):
+        """
+        Ensure we only emit the Idle-Suite Start line once per suite,
+        and only when at least one idle task actually performs work.
+        """
+        if self._idle_suite_header_active:
+            return
+        logger.info("[Idle-Suite:%s] Start.", self.port)
+        self._idle_suite_header_active = True
 
     def _background_loop(self):
         logger.info("Starting continuous background cycle.")
         next_cycle = time.time()
+        next_idle_suite = time.time() + self.idle_suite_interval
         while True:
             now = time.time()
             if now >= next_cycle:
                 self._run_main_cycle()
                 next_cycle = now + self.main_cycle_interval
+            elif now >= next_idle_suite:
+                self._run_idle_suite()
+                next_idle_suite = now + self.idle_suite_interval
             else:
-                self._run_idle_tick()
-                time.sleep(self.idle_tick_interval)
+                # Sleep until the next scheduled event (idle suite or main cycle),
+                # whichever comes first, but never longer than idle_tick_interval.
+                sleep_for = min(
+                    self.idle_tick_interval,
+                    max(0.0, next_idle_suite - now),
+                    max(0.0, next_cycle - now),
+                )
+                time.sleep(sleep_for)
 
     def _prune_ledger(self):
         """Deletes old, uncorroborated facts to manage node storage size."""
@@ -818,6 +1193,58 @@ def handle_sys_status():
     else:
         logger.info("[SYS_INIT] Speech Synthesis: ACTIVE")
     return jsonify({"status": "received"})
+
+
+@app.route("/debug/idle_state", methods=["GET"])
+def handle_idle_state():
+    """Debug-only endpoint exposing idle scheduling state."""
+    if node_instance is None:
+        return jsonify({"error": "Node is not initialized"}), 503
+    return jsonify(node_instance.get_idle_state())
+
+
+@app.route("/fragment_opinion", methods=["GET"])
+def handle_fragment_opinion():
+    """
+    Return this node's opinion about a specific fact's fragment status.
+    Used for simple cross-node consensus during idle fragment audits.
+    """
+    if node_instance is None:
+        return jsonify({"error": "Node is not initialized"}), 503
+
+    fact_id = request.args.get("fact_id", "").strip()
+    if not fact_id:
+        return jsonify({"error": "Missing fact_id"}), 400
+
+    import sqlite3 as _sqlite3
+
+    conn = _sqlite3.connect(node_instance.db_path)
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT status, trust_score, fragment_state, fragment_score
+            FROM facts
+            WHERE fact_id = ?
+            """,
+            (fact_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"seen": False})
+
+        status, trust_score, fragment_state, fragment_score = row
+        return jsonify(
+            {
+                "seen": True,
+                "status": status,
+                "trust_score": float(trust_score or 0.0),
+                "fragment_state": fragment_state or "unknown",
+                "fragment_score": float(fragment_score or 0.0),
+            }
+        )
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

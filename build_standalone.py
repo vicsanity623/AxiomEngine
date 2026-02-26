@@ -25,10 +25,10 @@ def have_uv() -> bool:
 def get_version() -> str:
     """Read version from pyproject.toml."""
     if not PYPROJECT.exists():
-        return "0.2.0"
+        return "0.2.1-beta.1"
     with open(PYPROJECT, "rb") as f:
         data = tomllib.load(f)
-    return data.get("project", {}).get("version", "0.2.0")
+    return data.get("project", {}).get("version", "0.2.1-beta.1")
 
 
 def check_requirements():
