@@ -1,9 +1,6 @@
 # Axiom - zeitgeist_engine.py
 # Copyright (C) 2026 The Axiom Contributors
 
-import re
-import hashlib
-import spacy
 import logging
 from collections import Counter
 
@@ -30,7 +27,50 @@ RSS_FEEDS = [
 ]
 
 IGNORED_ENTITIES = {
-    "the", "a", "an", "today", "yesterday", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "year", "years", "week", "weeks", "day", "days", "morning", "night", "new york times", "bbc", "reuters", "cnn", "npr", "ap", "press", "associated press", "bloomberg", "image", "photo",
+    "the",
+    "a",
+    "an",
+    "today",
+    "yesterday",
+    "tomorrow",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "year",
+    "years",
+    "week",
+    "weeks",
+    "day",
+    "days",
+    "morning",
+    "night",
+    "new york times",
+    "bbc",
+    "reuters",
+    "cnn",
+    "npr",
+    "ap",
+    "press",
+    "associated press",
+    "bloomberg",
+    "image",
+    "photo",
 }
 
 
@@ -39,7 +79,7 @@ def get_trending_topics(top_n=100):
     Filters out noise to find substantial subjects.
     """
     all_entities = []
-    
+
     # Standard Watch List: A fallback set of important, high-value topics if dynamic discovery fails.
     DEFAULT_WATCH_LIST = [
         "Artificial Intelligence",
@@ -48,7 +88,7 @@ def get_trending_topics(top_n=100):
         "Crypto",
         "Climate",
         "US Politics",
-        "Global Conflict"
+        "Global Conflict",
     ]
 
     for feed_url in RSS_FEEDS:
@@ -98,7 +138,7 @@ def get_trending_topics(top_n=100):
         logger.info(
             "[Zeitgeist] No substantial topics found via NER. Defaulting to standard watch list.",
         )
-        return DEFAULT_WATCH_LIST[:top_n] # Return the static list
+        return DEFAULT_WATCH_LIST[:top_n]  # Return the static list
 
     topic_counts = Counter(all_entities)
 
@@ -118,10 +158,13 @@ def get_trending_topics(top_n=100):
     # --- NEW LOGIC: Ensure we always return at least one default topic if dynamic list is too short ---
     if len(result) < top_n:
         for default_topic in DEFAULT_WATCH_LIST:
-            if default_topic not in result and default_topic not in unique_topics:
+            if (
+                default_topic not in result
+                and default_topic not in unique_topics
+            ):
                 result.append(default_topic)
                 if len(result) >= top_n:
                     break
-    
+
     logger.info(f"Top topics created: {result}\033[0m")
     return result

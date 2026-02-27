@@ -2,8 +2,8 @@
 # Copyright (C) 2026 The Axiom Contributors
 
 import logging
-import zlib
 import sqlite3
+import zlib
 
 from src.axiom_model_loader import load_nlp_model
 from src.synthesizer import get_weighted_entities
@@ -39,13 +39,14 @@ def _refine_streams_to_summary(grounded_facts, query_atoms):
     for s in fact_entities:
         all_entities |= s
     shared = set(
-        e for e in all_entities
-        if sum(1 for s in fact_entities if e in s) >= 2
+        e for e in all_entities if sum(1 for s in fact_entities if e in s) >= 2
     )
 
     # Anchor: fact with most shared-entity overlap, then highest trust
     def score(f, idx):
-        overlap = len(fact_entities[idx] & shared) if idx < len(fact_entities) else 0
+        overlap = (
+            len(fact_entities[idx] & shared) if idx < len(fact_entities) else 0
+        )
         trust = f.get("trust_score") or 0
         return (overlap, trust)
 
@@ -64,7 +65,11 @@ def _refine_streams_to_summary(grounded_facts, query_atoms):
         if not text:
             continue
         overlap = len(fact_entities[i] & shared)
-        if overlap >= max(1, len(shared) - 2) and len(text) < len(anchor_text) and (f.get("trust_score") or 0) >= 1:
+        if (
+            overlap >= max(1, len(shared) - 2)
+            and len(text) < len(anchor_text)
+            and (f.get("trust_score") or 0) >= 1
+        ):
             anchor_text = text
             break
 
@@ -86,7 +91,10 @@ def think(
     If use_summary is True and multiple streams exist, response is a refined one-sentence summary.
     """
     if not NLP_MODEL:
-        return {"response": "Cognitive error: NLP model offline.", "grounded_facts": []}
+        return {
+            "response": "Cognitive error: NLP model offline.",
+            "grounded_facts": [],
+        }
 
     if db_path is None:
         db_path = DEFAULT_DB_PATH
@@ -153,7 +161,7 @@ def think(
 
         if use_summary and len(grounded_facts) >= 1:
             summary = _refine_streams_to_summary(grounded_facts, query_atoms)
-            response = summary if summary else (grounded_facts[0].get("fact_content") or "")
+            response = summary or (grounded_facts[0].get("fact_content") or "")
         else:
             best_match = grounded_facts[0]
             response = best_match.get("fact_content") or ""
@@ -165,7 +173,9 @@ def think(
                 "streams support this trajectory."
             )
             if max_extra_streams > 0:
-                for i, f in enumerate(grounded_facts[1 : 1 + max_extra_streams], start=1):
+                for i, f in enumerate(
+                    grounded_facts[1 : 1 + max_extra_streams], start=1
+                ):
                     content = (f["fact_content"] or "").strip()
                     if len(content) > 200:
                         content = content[:197] + "..."

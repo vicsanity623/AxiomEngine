@@ -1,16 +1,7 @@
+"""Manage tunable parameters for the Axiom Node via environment variables."""
+
 # Axiom - config.py
 # Copyright (C) 2026 The Axiom Contributors
-#
-# Tunable parameters via environment variables. Restart the node after changing.
-#
-# Facts:
-#   AXIOM_REQUIRED_CORROBORATING_DOMAINS  (int, default 100) – domains before "trusted"
-#
-# Peer reputation:
-#   AXIOM_PEER_REP_INITIAL         (float, default 0.2)  – new peer starting rep
-#   AXIOM_PEER_REP_PENALTY        (float, default 0.05) – per failed sync
-#   AXIOM_PEER_REP_REWARD_UPTIME  (float, default 0.001)– per success, up-to-date
-#   AXIOM_PEER_REP_REWARD_NEW_DATA (float, default 0.01)– factor for new-facts bonus
 
 import os
 
@@ -44,7 +35,7 @@ REQUIRED_CORROBORATING_DOMAINS = _int(
 )
 
 # --- Peer reputation ---
-# Initial reputation for a newly discovered peer (0.0–1.0). Lower = trust earned slower.
+# Initial reputation for a newly discovered peer. Lower = trust earned slower.
 PEER_REP_INITIAL = _float("AXIOM_PEER_REP_INITIAL", 0.2)
 
 # Reputation change per failed sync (subtracted).

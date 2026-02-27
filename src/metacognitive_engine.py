@@ -3,7 +3,6 @@
 
 import logging
 import sqlite3
-import zlib
 from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,10 @@ def prune_integrity_check(db_path: str):
 
             # Pruning Rule: Delete if ADL is too short OR it has been
             # consistently classified as a fragment on an old, low-trust fact.
-            if len(adl) < ADL_INTEGRITY_THRESHOLD or fragment_state == "confirmed_fragment":
+            if (
+                len(adl) < ADL_INTEGRITY_THRESHOLD
+                or fragment_state == "confirmed_fragment"
+            ):
                 logger.debug(
                     f"[Meta-Prune] Deleting ID {fact_id[:8]} (ADL too shallow: {len(adl)} chars)",
                 )

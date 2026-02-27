@@ -1,13 +1,8 @@
-def load_nlp_model():
-    """
-    Safely load the spaCy `en_core_web_sm` model in both:
-    - Regular Python environments
-    - PyInstaller one-file frozen binaries
+"""Load the NLP model for both env and PyInstaller."""
 
-    Strategy (no network, no dynamic downloads):
-    1. Prefer the installed `en_core_web_sm` package's own `load()` function.
-    2. Fall back to `spacy.load("en_core_web_sm")` if that fails.
-    """
+
+def load_nlp_model():
+    """Safely load the spaCy `en_core_web_sm` model"""
     model_name = "en_core_web_sm"
 
     try:

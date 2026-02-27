@@ -27,24 +27,26 @@ from src import (
 )
 from src.api_query import query_lexical_mesh, search_ledger_for_api
 from src.axiom_logger import setup_logger
+from src.blockchain import create_block, get_blocks_after, get_chain_head
+from src.code_introspector import build_endpoint_registry, build_module_map
 from src.conversation_patterns import (
-    ConversationPattern,
     compile_patterns,
     match_query,
     seed_patterns,
 )
-from src.code_introspector import build_endpoint_registry, build_module_map
-from src.data_quality import find_conflict_candidates, find_duplicate_candidates
-from src.system_health import compute_health_snapshot
-from src.self_check import run_self_checks
+from src.data_quality import (
+    find_conflict_candidates,
+    find_duplicate_candidates,
+)
 from src.ledger import (
     get_unprocessed_facts_for_lexicon,
     initialize_database,
     mark_fact_as_processed,
     migrate_fact_content_to_compressed,
 )
-from src.blockchain import create_block, get_blocks_after, get_chain_head
 from src.p2p import sync_chain_with_peer, sync_with_peer
+from src.self_check import run_self_checks
+from src.system_health import compute_health_snapshot
 
 setup_logger()
 logger = logging.getLogger("node")
@@ -180,7 +182,7 @@ class AxiomNode:
             logger.info(
                 "\033[92mNo bootstrap peers defined. Starting as Genesis Node.\033[0m",
             )
-            return
+            return None
         logger.info(
             "\033[93m[Init] Performing initial sync with bootstrap peers...\033[0m",
         )
@@ -199,7 +201,9 @@ class AxiomNode:
                     peer_url,
                     self.db_path,
                 )
-                if appended > 0 or (peer_height > get_chain_head(self.db_path)[1]):
+                if appended > 0 or (
+                    peer_height > get_chain_head(self.db_path)[1]
+                ):
                     chain_updated = True
             except Exception as e:
                 logger.warning(
@@ -306,10 +310,7 @@ class AxiomNode:
             new_rep = (
                 current_rep
                 + PEER_REP_REWARD_UPTIME
-                + (
-                    math.log10(1 + new_facts_count)
-                    * PEER_REP_REWARD_NEW_DATA
-                )
+                + (math.log10(1 + new_facts_count) * PEER_REP_REWARD_NEW_DATA)
             )
         else:
             new_rep = current_rep
@@ -383,11 +384,17 @@ class AxiomNode:
             for row in rows:
                 raw = row["fact_content"]
                 try:
-                    text = zlib.decompress(raw).decode("utf-8") if isinstance(raw, (bytes, bytearray)) else (raw or "")
+                    text = (
+                        zlib.decompress(raw).decode("utf-8")
+                        if isinstance(raw, (bytes, bytearray))
+                        else (raw or "")
+                    )
                 except (zlib.error, ValueError, TypeError):
                     continue
                 if text:
-                    sample.append({"fact_id": row["fact_id"], "fact_content": text})
+                    sample.append(
+                        {"fact_id": row["fact_id"], "fact_content": text}
+                    )
             if sample:
                 logger.info(
                     "\033[2m[Idle:%s] Relationship rediscovery: re-linking %d facts against full ledger...\033[0m",
@@ -407,7 +414,11 @@ class AxiomNode:
             for row in reinforce_rows:
                 raw = row[1]
                 try:
-                    text = zlib.decompress(raw).decode("utf-8") if isinstance(raw, (bytes, bytearray)) else (raw or "")
+                    text = (
+                        zlib.decompress(raw).decode("utf-8")
+                        if isinstance(raw, (bytes, bytearray))
+                        else (raw or "")
+                    )
                 except (zlib.error, ValueError, TypeError):
                     continue
                 if text and crucible.integrate_fact_to_mesh(text):
@@ -498,8 +509,7 @@ class AxiomNode:
         self.print_mesh_status(force=True)
 
     def _idle_conversation_training(self):
-        """
-        Incrementally prepare conversation patterns for fast, non-ledger responses.
+        """Incrementally prepare conversation patterns for fast, non-ledger responses.
 
         Work is intentionally small per tick: compile a few patterns at a time.
         """
@@ -514,7 +524,9 @@ class AxiomNode:
 
         # Compile a bounded batch of patterns per idle tick.
         batch_size = 2
-        upper = min(compiled_index + batch_size, len(self._conversation_patterns))
+        upper = min(
+            compiled_index + batch_size, len(self._conversation_patterns)
+        )
         if compiled_index >= upper:
             # All patterns compiled; nothing else to do this tick.
             return
@@ -533,8 +545,7 @@ class AxiomNode:
             )
 
     def _idle_code_introspection(self):
-        """
-        Periodically refresh an internal map of modules and HTTP endpoints.
+        """Periodically refresh an internal map of modules and HTTP endpoints.
 
         This is throttled to avoid unnecessary filesystem work.
         """
@@ -565,11 +576,12 @@ class AxiomNode:
                 len(self._endpoint_registry or []),
             )
         except Exception as e:
-            logger.info("[Idle-Code:%s] Code introspection skipped: %s", self.port, e)
+            logger.info(
+                "[Idle-Code:%s] Code introspection skipped: %s", self.port, e
+            )
 
     def _idle_data_quality(self):
-        """
-        Periodically sample the ledger for duplicate and conflicting facts.
+        """Periodically sample the ledger for duplicate and conflicting facts.
 
         Results are cached in-memory for later inspection or reporting.
         """
@@ -600,12 +612,12 @@ class AxiomNode:
                 len(conflicts),
             )
         except Exception as e:
-            logger.info("[Idle-Data:%s] Data quality scan skipped: %s", self.port, e)
+            logger.info(
+                "[Idle-Data:%s] Data quality scan skipped: %s", self.port, e
+            )
 
     def _idle_health_snapshot(self):
-        """
-        Periodically compute a lightweight health snapshot of the ledger/db.
-        """
+        """Periodically compute a lightweight health snapshot of the ledger/db."""
         now = time.time()
         # Run at most once every 10 minutes.
         interval = 600.0
@@ -630,7 +642,9 @@ class AxiomNode:
             )
             try:
                 total_facts = int(self._health_snapshot.get("total_facts", 0))
-                total_blocks = int(self._health_snapshot.get("total_blocks", 0))
+                total_blocks = int(
+                    self._health_snapshot.get("total_blocks", 0)
+                )
                 if total_blocks > 0 and total_facts == 0:
                     logger.warning(
                         "[Idle-Health:%s] Anomaly detected: chain has %d block(s) but facts table is empty for db %s.",
@@ -642,12 +656,12 @@ class AxiomNode:
                 # Never allow anomaly checks to break idle cycles.
                 pass
         except Exception as e:
-            logger.info("[Idle-Health:%s] Health snapshot skipped: %s", self.port, e)
+            logger.info(
+                "[Idle-Health:%s] Health snapshot skipped: %s", self.port, e
+            )
 
     def _idle_self_checks(self):
-        """
-        Occasionally run a few deterministic self-queries against our own /think endpoint.
-        """
+        """Occasionally run a few deterministic self-queries against our own /think endpoint."""
         now = time.time()
         # Run at most once every 3 hours.
         interval = 10800.0
@@ -673,11 +687,12 @@ class AxiomNode:
                 self._self_check_results,
             )
         except Exception as e:
-            logger.info("[Idle-SelfCheck:%s] Self-checks skipped: %s", self.port, e)
+            logger.info(
+                "[Idle-SelfCheck:%s] Self-checks skipped: %s", self.port, e
+            )
 
     def _idle_fragment_audit(self):
-        """
-        Periodically scan a small sample of facts to refine fragment
+        """Periodically scan a small sample of facts to refine fragment
         classification and, when appropriate, seek simple consensus
         from peers about low-quality fragments.
         """
@@ -781,7 +796,10 @@ class AxiomNode:
                         new_state = "suspected_fragment"
                 else:
                     # If we previously suspected a fragment but evidence is weak, release it.
-                    if fragment_state in ("suspected_fragment", "confirmed_fragment"):
+                    if fragment_state in (
+                        "suspected_fragment",
+                        "confirmed_fragment",
+                    ):
                         new_state = "rejected_fragment"
 
                 # Lightweight peer consensus: if all sampled peers either
@@ -805,10 +823,17 @@ class AxiomNode:
                             if not data.get("seen"):
                                 positives += 1
                                 continue
-                            peer_state = data.get("fragment_state") or "unknown"
+                            peer_state = (
+                                data.get("fragment_state") or "unknown"
+                            )
                             peer_status = data.get("status")
-                            peer_trust = float(data.get("trust_score", 0.0) or 0.0)
-                            if peer_state in ("suspected_fragment", "confirmed_fragment"):
+                            peer_trust = float(
+                                data.get("trust_score", 0.0) or 0.0
+                            )
+                            if peer_state in (
+                                "suspected_fragment",
+                                "confirmed_fragment",
+                            ):
                                 positives += 1
                             elif peer_state == "rejected_fragment" or (
                                 peer_status == "trusted" and peer_trust >= 2
@@ -853,7 +878,9 @@ class AxiomNode:
             conn.close()
             self._last_fragment_audit_ts = now
         except Exception as e:
-            logger.info("[Idle-Fragment:%s] Fragment audit skipped: %s", self.port, e)
+            logger.info(
+                "[Idle-Fragment:%s] Fragment audit skipped: %s", self.port, e
+            )
 
     # --- Helpers for meta-commands exposed via /think ---
 
@@ -865,12 +892,23 @@ class AxiomNode:
         interesting = [
             name
             for name in self._code_map.keys()
-            if any(key in name for key in ("node.py", "crucible", "synthesizer", "blockchain", "p2p"))
+            if any(
+                key in name
+                for key in (
+                    "node.py",
+                    "crucible",
+                    "synthesizer",
+                    "blockchain",
+                    "p2p",
+                )
+            )
         ]
         interesting = sorted(set(interesting))[:8]
         parts = [f"I currently see {module_count} Python modules under src/."]
         if interesting:
-            parts.append("Key subsystems include: " + ", ".join(interesting) + ".")
+            parts.append(
+                "Key subsystems include: " + ", ".join(interesting) + "."
+            )
         return " ".join(parts)
 
     def get_endpoints_summary(self) -> str:
@@ -907,9 +945,7 @@ class AxiomNode:
         return " ".join(parts)
 
     def get_idle_state(self) -> dict:
-        """
-        Introspect idle scheduling and last-run timestamps for debugging.
-        """
+        """Introspect idle scheduling and last-run timestamps for debugging."""
         now = time.time()
 
         def age(ts: float) -> float | None:
@@ -924,7 +960,9 @@ class AxiomNode:
             "idle_suite_interval_sec": self.idle_suite_interval,
             "last_main_cycle_age_sec": age(self._last_main_cycle_ts),
             "last_idle_learning_age_sec": age(self._last_idle_learning_ts),
-            "last_code_introspection_age_sec": age(self._last_code_introspection_ts),
+            "last_code_introspection_age_sec": age(
+                self._last_code_introspection_ts
+            ),
             "last_data_quality_age_sec": age(self._last_data_quality_ts),
             "last_health_snapshot_age_sec": age(self._last_health_snapshot_ts),
             "last_self_check_age_sec": age(self._last_self_check_ts),
@@ -947,8 +985,7 @@ class AxiomNode:
             )
 
     def _run_idle_suite(self):
-        """
-        Run all registered idle tasks in a fixed sequence so their logs
+        """Run all registered idle tasks in a fixed sequence so their logs
         appear grouped together for easier debugging.
         """
         if not self.idle_tasks:
@@ -973,8 +1010,7 @@ class AxiomNode:
         now: float,
         last_run_ts: float,
     ):
-        """
-        Log (at debug level) that an idle task is being throttled, but
+        """Log (at debug level) that an idle task is being throttled, but
         rate-limit those logs so they do not flood the console.
         """
         last_log_ts = self._idle_throttle_log.get(name, 0.0)
@@ -993,8 +1029,7 @@ class AxiomNode:
         self._idle_throttle_log[name] = now
 
     def _ensure_idle_suite_header(self):
-        """
-        Ensure we only emit the Idle-Suite Start line once per suite,
+        """Ensure we only emit the Idle-Suite Start line once per suite,
         and only when at least one idle task actually performs work.
         """
         if self._idle_suite_header_active:
@@ -1035,7 +1070,7 @@ class AxiomNode:
         )
 
         # --- FIX: Use self.db_path instead of referencing undefined 'db_path' ---
-        conn = sqlite3.connect(self.db_path) 
+        conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute(
@@ -1078,7 +1113,11 @@ def handle_local_query():
     include_uncorroborated = (
         request.args.get("include_uncorroborated", "false").lower() == "true"
     )
-    results = node_instance.search_ledger_for_api(search_term, include_uncorroborated=include_uncorroborated, db_path=node_instance.db_path) 
+    results = node_instance.search_ledger_for_api(
+        search_term,
+        include_uncorroborated=include_uncorroborated,
+        db_path=node_instance.db_path,
+    )
     return jsonify({"results": results})
 
 
@@ -1205,8 +1244,7 @@ def handle_idle_state():
 
 @app.route("/fragment_opinion", methods=["GET"])
 def handle_fragment_opinion():
-    """
-    Return this node's opinion about a specific fact's fragment status.
+    """Return this node's opinion about a specific fact's fragment status.
     Used for simple cross-node consensus during idle fragment audits.
     """
     if node_instance is None:
@@ -1253,14 +1291,18 @@ if __name__ == "__main__":
         port_val = int(os.environ.get("PORT", 8009))
         bootstrap_val = os.environ.get("BOOTSTRAP_PEER")
         node_instance = AxiomNode(port=port_val, bootstrap_peer=bootstrap_val)
-        
+
         initial_sync_complete = True
-        if port_val != 8009 and node_instance.peers: # Only run explicit sync for non-bootstrap peers
+        if (
+            port_val != 8009 and node_instance.peers
+        ):  # Only run explicit sync for non-bootstrap peers
             initial_sync_complete = node_instance.bootstrap_sync()
             if not initial_sync_complete:
-                 logger.warning("[INIT] Initial chain sync failed. Relying on background loop.")
+                logger.warning(
+                    "[INIT] Initial chain sync failed. Relying on background loop."
+                )
 
-        node_instance.start_background_tasks()        
+        node_instance.start_background_tasks()
     logger.info(
         f"\033[2mAxiom Identity: {node_instance.advertised_url}\033[0m",
     )

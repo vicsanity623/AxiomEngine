@@ -3,7 +3,7 @@
 
 import sqlite3
 import zlib
-from typing import Any # Added for type hinting consistency
+from typing import Any  # Added for type hinting consistency
 
 # DB_NAME removed. All functions now require db_path.
 
@@ -20,7 +20,9 @@ def _decompress_fact_content(raw):
         return "[unable to decompress]"
 
 
-def load_facts_and_relationships(db_path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def load_facts_and_relationships(
+    db_path: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Loads facts and relationships from the ledger. fact_content is decompressed to str for viz."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -45,7 +47,9 @@ def load_facts_and_relationships(db_path: str) -> tuple[list[dict[str, Any]], li
     return facts, relationships
 
 
-def load_brain_synapses(db_path: str, min_strength=2) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def load_brain_synapses(
+    db_path: str, min_strength=2
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """NEW: Fetches atoms and synapses for brain visualization."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

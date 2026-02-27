@@ -106,7 +106,9 @@ def link_related_facts(new_facts_batch, db_path: str | None = None):
         )
         return
 
-    all_facts_in_ledger = get_all_facts_for_analysis(db_path or "axiom_ledger.db")
+    all_facts_in_ledger = get_all_facts_for_analysis(
+        db_path or "axiom_ledger.db"
+    )
     logger.info(
         f"\033[96m[The Synthesizer] Indexing {len(all_facts_in_ledger)} existing facts for cross-reference...\033[0m",
     )

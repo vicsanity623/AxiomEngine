@@ -5,13 +5,12 @@ import hashlib
 import logging
 import sqlite3
 import zlib
-import json
+
 import requests
 
 from src.blockchain import (
     append_block,
     get_chain_head,
-    get_blocks_after,
     replace_chain_with_peer_blocks,
 )
 
@@ -63,7 +62,7 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
         peer_fact_ids = set(response.json().get("fact_ids", []))
 
         # USE THE PASSED db_path
-        conn = sqlite3.connect(db_path) 
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT fact_id FROM facts")
         local_fact_ids = set(row[0] for row in cursor.fetchall())
@@ -116,7 +115,9 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
 
             try:
                 try:
-                    compressed_content = zlib.compress(content_text.encode("utf-8"))
+                    compressed_content = zlib.compress(
+                        content_text.encode("utf-8")
+                    )
                 except Exception as e:
                     logger.warning(
                         f"\033[91m[P2P Sync] Could not compress incoming fact {fact.get('fact_id', '')[:8]} from {peer_url}: {e}\033[0m"
@@ -167,8 +168,7 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
 
 
 def sync_chain_with_peer(node_instance, peer_url, db_path: str):
-    """
-    Sync blockchain from peer: if peer has a longer chain, fetch new blocks and append.
+    """Sync blockchain from peer: if peer has a longer chain, fetch new blocks and append.
     Returns (blocks_appended_count, peer_chain_height) for logging.
     """
     try:
@@ -226,21 +226,24 @@ def sync_chain_with_peer(node_instance, peer_url, db_path: str):
                         )
                         full_resp.raise_for_status()
                         peer_blocks = full_resp.json().get("blocks", [])
-                        if peer_blocks and replace_chain_with_peer_blocks(peer_blocks, db_path=db_path):
+                        if peer_blocks and replace_chain_with_peer_blocks(
+                            peer_blocks, db_path=db_path
+                        ):
                             logger.info(
                                 f"\033[92m[P2P Chain] Adopted peer chain from {peer_url} (longest-chain wins, height now {peer_height}).\033[0m",
                             )
                             return len(peer_blocks), peer_height
-                        else:
-                            logger.error(
-                                f"[P2P Chain] Chain adoption failed after divergence. Peer's full history starting at height 0 is unusable/inconsistent."
-                            )
+                        logger.error(
+                            "[P2P Chain] Chain adoption failed after divergence. Peer's full history starting at height 0 is unusable/inconsistent."
+                        )
                     except Exception as e:
-                        logger.debug(f"[P2P Chain] Could not adopt peer chain: {e}")
-                
+                        logger.debug(
+                            f"[P2P Chain] Could not adopt peer chain: {e}"
+                        )
+
                 # Stop trying to append the rest of this partial batch
-                break 
-        
+                break
+
         if appended > 0:
             logger.info(
                 f"\033[92m[P2P Chain] Appended {appended} block(s) from {peer_url} (height now {our_height + appended}).\033[0m",

@@ -1,6 +1,12 @@
+"""Define and match conversational patterns for the Axiom engine.
+
+This module provides rule-based pattern matching for interpreting user queries
+and generating appropriate responses. It supports slot-based templates, regex
+compilation, and scoring heuristics to determine the best response for a given input.
+"""
+
 import re
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
 
 
 def _normalize(text: str) -> str:
@@ -16,18 +22,17 @@ class ConversationPattern:
     response: str
     weight: float = 1.0
     # Compiled at idle time
-    regex: Optional[re.Pattern] = None
+    regex: re.Pattern | None = None
 
     def compile(self) -> None:
-        """
-        Compile the raw_template into a regex.
+        """Compile the raw_template into a regex.
 
         Supported syntax:
         - `<slot>` becomes a non-greedy capture group `(?P<slot>.+?)`.
         - Literal text is escaped.
         """
         pattern = self.raw_template
-        tokens: List[str] = []
+        tokens: list[str] = []
         i = 0
         while i < len(pattern):
             if pattern[i] == "<":
@@ -49,8 +54,8 @@ class ConversationPattern:
         self.regex = re.compile(rf"^{joined}$", re.IGNORECASE)
 
 
-def seed_patterns() -> List[ConversationPattern]:
-    """Initial, ledger-independent patterns and responses."""
+def seed_patterns() -> list[ConversationPattern]:
+    """Initialize ledger-independent patterns and responses."""
     return [
         ConversationPattern(
             raw_template="help",
@@ -131,7 +136,7 @@ def seed_patterns() -> List[ConversationPattern]:
     ]
 
 
-def compile_patterns(patterns: List[ConversationPattern]) -> None:
+def compile_patterns(patterns: list[ConversationPattern]) -> None:
     """Compile regex for each pattern in-place."""
     for p in patterns:
         p.compile()
@@ -139,11 +144,10 @@ def compile_patterns(patterns: List[ConversationPattern]) -> None:
 
 def match_query(
     query: str,
-    patterns: List[ConversationPattern],
+    patterns: list[ConversationPattern],
     min_score: float = 0.6,
-) -> Tuple[bool, str]:
-    """
-    Try to match query against known patterns.
+) -> tuple[bool, str]:
+    """Try to match query against known patterns.
 
     Scoring heuristic (simple, deterministic, non-ML):
     - Exact normalized string match: score = 1.0 * weight
@@ -178,7 +182,11 @@ def match_query(
             continue
 
         # Simple containment only for non-slot templates.
-        if "<" not in p.raw_template and template_norm and template_norm in q_norm:
+        if (
+            "<" not in p.raw_template
+            and template_norm
+            and template_norm in q_norm
+        ):
             score = 0.7 * base
             if score > best_score:
                 best_score = score
@@ -187,4 +195,3 @@ def match_query(
     if best_score >= min_score:
         return True, best_response
     return False, ""
-

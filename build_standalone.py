@@ -1,3 +1,9 @@
+"""Build a standalone Axiom Node binary and optional macOS DMG.
+
+This script automates the compilation process using PyInstaller, handles
+dependency synchronization via uv, and packages the result for the
+current operating system.
+"""
 # Axiom - build_standalone.py
 # Copyright (C) 2026 The Axiom Contributors
 #
@@ -19,28 +25,37 @@ PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 
 
 def have_uv() -> bool:
+    """Check if the 'uv' executable is available in the system PATH."""
     return shutil.which("uv") is not None
 
 
 def get_version() -> str:
-    """Read version from pyproject.toml."""
+    """Read the project version from pyproject.toml or return a fallback default."""
     if not PYPROJECT.exists():
-        return "0.2.1-beta.1"
+        return "0.2.1"
     with open(PYPROJECT, "rb") as f:
         data = tomllib.load(f)
-    return data.get("project", {}).get("version", "0.2.1-beta.1")
+    return data.get("project", {}).get("version", "0.2.1")
 
 
 def check_requirements():
+    """Verify that all necessary build tools and dependencies are installed."""
     print("--- [1/5] Checking Requirements ---")
-    if have_uv():
-        print("Using uv for environment.")
-        sync = subprocess.run(
-            ["uv", "sync", "--no-dev"],
+
+    uv_path = shutil.which("uv")
+
+    if uv_path and have_uv():
+        print(f"Using uv for environment at: {uv_path}")
+
+        # This is safe because uv_path is resolved via shutil.which.
+        sync = subprocess.run(  # noqa: S603
+            [uv_path, "sync", "--no-dev"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
+            shell=False,
         )
+
         if sync.returncode != 0:
             print(f"Error: uv sync failed:\n{sync.stderr or sync.stdout}")
             sys.exit(1)
@@ -54,16 +69,15 @@ def check_requirements():
             print("Or install uv and run from project root: uv sync")
             sys.exit(1)
 
-    if platform.system() == "Darwin":
-        if shutil.which("create-dmg") is None:
-            print(
-                "Warning: 'create-dmg' not found. DMG shortcut will be skipped.",
-            )
-            print("Fix: brew install create-dmg")
+    if platform.system() == "Darwin" and shutil.which("create-dmg") is None:
+        print(
+            "Warning: 'create-dmg' not found. DMG shortcut will be skipped.",
+        )
+        print("Fix: brew install create-dmg")
 
 
 def get_spacy_data():
-    """Locates the actual data folder for en_core_web_sm."""
+    """Locate the absolute path to the 'en_core_web_sm' data directory for PyInstaller."""
     import en_core_web_sm
 
     path = os.path.dirname(en_core_web_sm.__file__)
@@ -73,11 +87,11 @@ def get_spacy_data():
 
 
 def build_binary():
+    """Compile the Python source code into a single-file executable."""
     print(
         f"--- [2/5] Compiling Binary (Python {platform.python_version()}) ---",
     )
 
-    sep = ";" if os.name == "nt" else ":"
     main_script_path = PROJECT_ROOT / "src" / MAIN_SCRIPT
     if not main_script_path.exists():
         print(f"Error: Entry point not found: {main_script_path}")
@@ -123,7 +137,7 @@ def build_binary():
         "matplotlib",
     ]
 
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, shell=False)  # noqa: S603
     if result.returncode != 0:
         print(
             f"\n\033[91mBuild failed with exit code {result.returncode}\033[0m",
@@ -132,7 +146,7 @@ def build_binary():
 
 
 def create_dmg():
-    """Creates a professional DMG for macOS."""
+    """Create a professional macOS Disk Image (DMG) for distribution."""
     if platform.system() != "Darwin" or shutil.which("create-dmg") is None:
         return
 
@@ -175,7 +189,7 @@ def create_dmg():
         str(staging),
     ]
 
-    subprocess.run(cmd)
+    subprocess.run(cmd, shell=False, check=False)  # noqa: S603
     shutil.rmtree(staging)
     print(
         f"\033[92mSUCCESS: macOS Installer created at dist/{dmg_name}\033[0m",
@@ -183,7 +197,7 @@ def create_dmg():
 
 
 def create_win_exe_shortcut():
-    """Placeholder for creating a Windows-friendly shortcut/installer if needed."""
+    """Handle Windows-specific post-build packaging steps."""
     if platform.system() == "Windows":
         print(
             "--- [3/5] Windows packaging steps skipped (Inno Setup required for full EXE installer). ---",
@@ -195,6 +209,7 @@ def create_win_exe_shortcut():
 
 
 def cleanup():
+    """Remove temporary build artifacts and specification files."""
     print("--- [4/5] Cleaning Build Artifacts ---")
     build_dir = PROJECT_ROOT / "build"
     if build_dir.exists():
@@ -205,6 +220,7 @@ def cleanup():
 
 
 def main():
+    """Orchestrate the end-to-end build process for the current platform."""
     check_requirements()
     build_binary()
 

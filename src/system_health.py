@@ -1,18 +1,17 @@
-"""
-Axiom - system_health.py
+"""Axiom - system_health.py
 
 Helpers to compute lightweight snapshots of ledger and blockchain health.
 Intended for periodic idle tasks, not heavy analytics.
 """
 
 import sqlite3
-from typing import Dict, Any
+from typing import Any
 
 
-def compute_health_snapshot(db_path: str) -> Dict[str, Any]:
+def compute_health_snapshot(db_path: str) -> dict[str, Any]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    snapshot: Dict[str, Any] = {}
+    snapshot: dict[str, Any] = {}
     try:
         cur = conn.cursor()
 
@@ -43,7 +42,9 @@ def compute_health_snapshot(db_path: str) -> Dict[str, Any]:
         snapshot = {
             "total_facts": int(total_facts or 0),
             "status_counts": status_counts,
-            "avg_trust_score": float(avg_trust) if avg_trust is not None else None,
+            "avg_trust_score": float(avg_trust)
+            if avg_trust is not None
+            else None,
             "oldest_fact_ts": age_row["oldest"] if age_row else None,
             "newest_fact_ts": age_row["newest"] if age_row else None,
             "total_blocks": int(total_blocks or 0),
@@ -53,4 +54,3 @@ def compute_health_snapshot(db_path: str) -> Dict[str, Any]:
         conn.close()
 
     return snapshot
-

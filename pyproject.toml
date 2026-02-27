@@ -8,7 +8,7 @@ name = "axiom-engine"
 authors = [
   { name="Vic", email="victronevarez88@gmail.com" },
 ]
-version = "0.2.1-beta.1"
+version = "0.2.1"
 description = "A decentralized, deterministic knowledge engine based on a Lexical Mesh."
 readme = "README.md"
 requires-python = ">=3.12"

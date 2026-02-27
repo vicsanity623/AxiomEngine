@@ -6,7 +6,6 @@
 import argparse
 import os
 import sqlite3
-import sys
 import zlib
 
 from src.ledger import initialize_database
@@ -117,7 +116,7 @@ def print_stats(db_path: str):
         conn.close()
 
 
-def print_brain(db_path: str, limit=15): # <-- Added db_path
+def print_brain(db_path: str, limit=15):  # <-- Added db_path
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -160,7 +159,7 @@ def print_brain(db_path: str, limit=15): # <-- Added db_path
         conn.close()
 
 
-def print_facts(db_path: str, limit=20): # <-- Added db_path
+def print_facts(db_path: str, limit=20):  # <-- Added db_path
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -178,7 +177,9 @@ def print_facts(db_path: str, limit=20): # <-- Added db_path
 
         status = r["status"]
         color = (
-            GREEN if status == "trusted" else (RED if status == "disputed" else GRAY)
+            GREEN
+            if status == "trusted"
+            else (RED if status == "disputed" else GRAY)
         )
 
         # --- DECOMPRESS CONTENT HERE (Crucial Step) ---
@@ -186,13 +187,13 @@ def print_facts(db_path: str, limit=20): # <-- Added db_path
             # The content is now a compressed BLOB (bytes) from ledger.py
             fact_content = zlib.decompress(r["fact_content"]).decode("utf-8")
         except (TypeError, zlib.error):
-            fact_content = (
-                f"ERROR: Could not decompress fact content (ID: {r['fact_id'][:8]})."
-            )
+            fact_content = f"ERROR: Could not decompress fact content (ID: {r['fact_id'][:8]})."
 
         # Indicator for brain processing
         processed = (
-            f"{PINK}◈{RESET}" if r.get("lexically_processed") else f"{GRAY}◇{RESET}"
+            f"{PINK}◈{RESET}"
+            if r.get("lexically_processed")
+            else f"{GRAY}◇{RESET}"
         )
 
         # Calculate word count and derive fragment indicator using stored metadata when available.
@@ -207,7 +208,9 @@ def print_facts(db_path: str, limit=20): # <-- Added db_path
         else:
             # Legacy heuristic fallback on very short sentences.
             integrity = (
-                f"{GREEN}COMPLETE{RESET}" if word_count > 8 else f"{RED}FRAGMENT?{RESET}"
+                f"{GREEN}COMPLETE{RESET}"
+                if word_count > 8
+                else f"{RED}FRAGMENT?{RESET}"
             )
 
         print(
@@ -215,7 +218,7 @@ def print_facts(db_path: str, limit=20): # <-- Added db_path
         )
         print(f"   {fact_content}")  # Print the DECOMPRESSED content
         print(f"   {GRAY}Source: {r['source_url']}{RESET}")
-        print("")
+        print()
 
     conn.close()
 
@@ -247,7 +250,7 @@ if __name__ == "__main__":
         default=os.environ.get("AXIOM_DB_PATH", "axiom_ledger.db"),
         help="Specify the path to the ledger.db file to inspect.",
     )
-    
+
     args = parser.parse_args()
 
     ensure_ledger_schema(args.db)

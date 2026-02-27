@@ -1,3 +1,11 @@
+"""Process and integrate textual facts into the Axiom knowledge mesh.
+
+This module serves as the core ingestion pipeline for extracting structured
+facts from raw text. It performs NLP analysis, validates grammatical integrity,
+detects contradictions, and stores verified facts as lexical atoms and synapses
+within the knowledge graph.
+"""
+
 # Axiom - crucible.py
 # Copyright (C) 2026 The Axiom Contributors
 
@@ -20,6 +28,8 @@ from src.ledger import (
 logger = logging.getLogger(__name__)
 
 NLP_MODEL = load_nlp_model()
+
+MIN_NAMED_ENTITIES_FOR_FACT = 2
 
 SUBJECTIVITY_INDICATORS = {
     "believe",
@@ -57,7 +67,8 @@ SUBJECTIVITY_INDICATORS = {
 
 
 def _generate_adl_summary(doc):
-    """Generates a compact, deterministic representation of the sentence structure (ADL).
+    """Generate a compact, deterministic representation of the sentence structure (ADL).
+
     Format: [Subject_ROOT_Verb(Lemma)_Entities_Hash]
     """
     subject = next(
@@ -78,17 +89,13 @@ def _generate_adl_summary(doc):
     )
 
     # Concatenate the most important structural markers
-    adl_string = f"{subject}|{root_verb}|{'_'.join(entities)}"
-
     # Return a hash of this summary for compact storage, or the string itself for debugging
-    return adl_string
-
-
-# ---------------------
+    return f"{subject}|{root_verb}|{'_'.join(entities)}"
 
 
 def integrate_fact_to_mesh(fact_content):
-    """Deconstructs a verified fact into its linguistic atoms and synapses.
+    """Deconstruct a verified fact into its linguistic atoms and synapses.
+
     Axiom 'learns' language structure from the facts it gathers.
     """
     if not NLP_MODEL:
@@ -115,19 +122,23 @@ def integrate_fact_to_mesh(fact_content):
 
 
 def _sanitize_text(text):
-    """Basic cleanup before NLP processing."""
+    """Clean up text before NLP processing."""
     if not text:
         return ""
     if isinstance(text, bytes):
         text = text.decode("utf-8", errors="replace")
     text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"Read more.*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return re.sub(
+        r"Read more.*",
+        "",
+        re.sub(r"\s+", " ", text.strip()),
+        flags=re.IGNORECASE,
+    )
 
 
 def _is_valid_grammatical_sentence(doc):
-    """CRITICAL: Ensures the text is a complete sentence, not a fragment.
+    """Ensure the text is a complete sentence, not a fragment.
+
     Must have a Subject (nsubj) and a Root Verb.
     """
     has_subject = any(
@@ -138,11 +149,6 @@ def _is_valid_grammatical_sentence(doc):
     if not has_subject or not has_verb:
         return False
     return True
-
-
-# Minimum number of distinct named entities required for a sentence to be stored as a fact.
-# Reduces topic-less or single-entity filler sentences (e.g. "The BBC saw X returning").
-MIN_NAMED_ENTITIES_FOR_FACT = 2
 
 
 def _count_named_entities(doc):
@@ -156,16 +162,12 @@ def _count_named_entities(doc):
 
 
 def _contains_named_entity(doc):
-    """Quality Control: A 'Fact' is usually about specific entities.
-    Reject sentences like "He went to the store" (Who is He?).
-    Accept "Elon Musk went to the store."
-    """
+    """Reject and or Accept a fact."""
     return _count_named_entities(doc) >= 1
 
 
 def _compute_fragment_metadata(doc, raw_sent: str):
-    """
-    Heuristic fragment scoring with NO model calls beyond the provided doc.
+    """Heuristic fragment scoring with NO model calls beyond the provided doc.
 
     This is intentionally simple and deterministic:
     - Short sentences and lack of named entities are treated as more fragment-like.
@@ -195,7 +197,16 @@ def _compute_fragment_metadata(doc, raw_sent: str):
         reason_parts.append("no_named_entities")
 
     # Pronoun-leading sentences often rely heavily on previous context.
-    pronoun_starts = ("he ", "she ", "they ", "it ", "this ", "that ", "these ", "those ")
+    pronoun_starts = (
+        "he ",
+        "she ",
+        "they ",
+        "it ",
+        "this ",
+        "that ",
+        "these ",
+        "those ",
+    )
     if any(lower.startswith(p) for p in pronoun_starts):
         score += 0.25
         reason_parts.append("pronoun_start")
@@ -210,9 +221,7 @@ def _compute_fragment_metadata(doc, raw_sent: str):
 
     score = max(0.0, min(1.0, score))
 
-    if score >= 0.8:
-        state = "suspected_fragment"
-    elif score >= 0.5:
+    if score >= 0.8 or score >= 0.5:
         state = "suspected_fragment"
     else:
         state = "unknown"
@@ -271,29 +280,30 @@ def _check_for_contradiction(new_doc, all_existing_facts):
 
 
 def extract_facts_from_text(source_url, text_content):
-    """
-    Main processing pipeline.
+    """Main processing pipeline.
     1. Sanitize
     2. Split into sentences
     3. Filter for Grammar & Entities
     4. Check Ledger
     5. Save (Compressed BLOB + ADL Summary)
     """
-    logger.info(f"\033[2m--- [The Crucible] Analyzing content from {source_url[:50]}... ---\033[0m")
-    
+    logger.info(
+        f"\033[2m--- [The Crucible] Analyzing content from {source_url[:50]}... ---\033[0m"
+    )
+
     text_content = _sanitize_text(text_content)
     doc = NLP_MODEL(text_content)
-    
+
     all_facts_in_ledger = get_all_facts_for_analysis()
     newly_created_facts = []
     contradictions = 0
-    
+
     for sent in doc.sents:
         raw_sent = sent.text.strip()
-        
+
         if len(raw_sent) < 25 or len(raw_sent) > 400:
             continue
-            
+
         if any(word in raw_sent.lower() for word in SUBJECTIVITY_INDICATORS):
             continue
 
@@ -301,7 +311,7 @@ def extract_facts_from_text(source_url, text_content):
             continue
 
         sent_doc = NLP_MODEL(raw_sent)
-        
+
         if not _is_valid_grammatical_sentence(sent_doc):
             continue
 
@@ -322,7 +332,7 @@ def extract_facts_from_text(source_url, text_content):
             )
             contradictions += 1
             continue
-            
+
         domain = re.search(r"https?://(?:www\.)?([^/]+)", source_url).group(1)
         similar_fact = find_similar_fact_from_different_domain(
             raw_sent,
@@ -333,14 +343,16 @@ def extract_facts_from_text(source_url, text_content):
         if similar_fact:
             update_fact_corroboration(similar_fact["fact_id"], source_url)
             continue
-            
+
         fact_id = hashlib.sha256(raw_sent.encode("utf-8")).hexdigest()
 
         # --- GENERATE ADL & fragment metadata ---
         adl_summary = _generate_adl_summary(sent_doc)
-        fragment_score, fragment_state, fragment_reason = _compute_fragment_metadata(
-            sent_doc,
-            raw_sent,
+        fragment_score, fragment_state, fragment_reason = (
+            _compute_fragment_metadata(
+                sent_doc,
+                raw_sent,
+            )
         )
 
         # --- CORRECTED: Call insert_uncorroborated_fact ONCE with all data ---
@@ -353,7 +365,7 @@ def extract_facts_from_text(source_url, text_content):
             fragment_score=fragment_score,
             fragment_reason=fragment_reason,
         )
-        
+
         if result:
             logger.info(
                 f"[ADL TEMP] Generated ADL for new fact {fact_id[:8]}: {adl_summary}",

@@ -1,22 +1,21 @@
-"""
-Axiom - self_check.py
+"""Axiom - self_check.py
 
 Deterministic self-query checks for the /think endpoint.
 These are light sanity checks, not full tests.
 """
 
-import requests
 from dataclasses import dataclass
-from typing import List
+
+import requests
 
 
 @dataclass
 class SelfCheckCase:
     query: str
-    must_contain: List[str]
+    must_contain: list[str]
 
 
-SELF_CHECKS: List[SelfCheckCase] = [
+SELF_CHECKS: list[SelfCheckCase] = [
     SelfCheckCase(
         query="what is the lexical mesh",
         must_contain=["lexical mesh"],
@@ -32,11 +31,9 @@ SELF_CHECKS: List[SelfCheckCase] = [
 ]
 
 
-def run_self_checks(base_url: str, timeout: float = 3.0) -> List[dict]:
-    """
-    Run a small suite of self-queries against /think and report pass/fail.
-    """
-    results: List[dict] = []
+def run_self_checks(base_url: str, timeout: float = 3.0) -> list[dict]:
+    """Run a small suite of self-queries against /think and report pass/fail."""
+    results: list[dict] = []
     for case in SELF_CHECKS:
         try:
             resp = requests.get(
@@ -47,7 +44,9 @@ def run_self_checks(base_url: str, timeout: float = 3.0) -> List[dict]:
             resp.raise_for_status()
             data = resp.json()
             answer = str(data.get("response", "")).lower()
-            missing = [kw for kw in case.must_contain if kw.lower() not in answer]
+            missing = [
+                kw for kw in case.must_contain if kw.lower() not in answer
+            ]
             ok = not missing
             results.append(
                 {
@@ -65,4 +64,3 @@ def run_self_checks(base_url: str, timeout: float = 3.0) -> List[dict]:
                 }
             )
     return results
-

@@ -1,5 +1,4 @@
-"""
-Axiom - data_quality.py
+"""Axiom - data_quality.py
 
 Local-only helpers for fact deduplication and simple conflict detection.
 These are designed for small, throttled idle tasks, not full offline jobs.
@@ -9,7 +8,6 @@ import hashlib
 import sqlite3
 import zlib
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
 
 
 def _safe_text(raw) -> str:
@@ -35,24 +33,22 @@ def _fingerprint(text: str) -> str:
 @dataclass
 class DuplicateGroup:
     fingerprint: str
-    fact_ids: List[str]
+    fact_ids: list[str]
 
 
 @dataclass
 class ConflictGroup:
     subject: str
     predicate: str
-    objects: List[str]
-    fact_ids: List[str]
+    objects: list[str]
+    fact_ids: list[str]
 
 
 def find_duplicate_candidates(
     db_path: str,
     sample_size: int = 500,
-) -> List[DuplicateGroup]:
-    """
-    Sample a subset of facts and group obvious duplicates by content fingerprint.
-    """
+) -> list[DuplicateGroup]:
+    """Sample a subset of facts and group obvious duplicates by content fingerprint."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -65,7 +61,7 @@ def find_duplicate_candidates(
     finally:
         conn.close()
 
-    buckets: Dict[str, List[str]] = {}
+    buckets: dict[str, list[str]] = {}
     for row in rows:
         text = _safe_text(row["fact_content"])
         if not text:
@@ -80,9 +76,8 @@ def find_duplicate_candidates(
     ]
 
 
-def _parse_adl_triplet(text: str) -> Tuple[str, str, str]:
-    """
-    Very small helper for ADL-like 'subject|verb|object' strings.
+def _parse_adl_triplet(text: str) -> tuple[str, str, str]:
+    """Very small helper for ADL-like 'subject|verb|object' strings.
     Returns (subject, verb, object) or empty strings if parsing fails.
     """
     parts = [p.strip() for p in text.split("|")]
@@ -94,9 +89,8 @@ def _parse_adl_triplet(text: str) -> Tuple[str, str, str]:
 def find_conflict_candidates(
     db_path: str,
     sample_size: int = 500,
-) -> List[ConflictGroup]:
-    """
-    Look for simple conflicts where the same subject+predicate pair appears with
+) -> list[ConflictGroup]:
+    """Look for simple conflicts where the same subject+predicate pair appears with
     multiple distinct objects in ADL-style facts.
     """
     conn = sqlite3.connect(db_path)
@@ -111,7 +105,7 @@ def find_conflict_candidates(
     finally:
         conn.close()
 
-    buckets: Dict[Tuple[str, str], Dict[str, List[str]]] = {}
+    buckets: dict[tuple[str, str], dict[str, list[str]]] = {}
 
     for row in rows:
         text = _safe_text(row["fact_content"])
@@ -124,12 +118,12 @@ def find_conflict_candidates(
         obj_map = buckets.setdefault(key, {})
         obj_map.setdefault(obj, []).append(row["fact_id"])
 
-    conflicts: List[ConflictGroup] = []
+    conflicts: list[ConflictGroup] = []
     for (subj, pred), obj_map in buckets.items():
         if len(obj_map) <= 1:
             continue
-        objects: List[str] = list(obj_map.keys())
-        fact_ids: List[str] = []
+        objects: list[str] = list(obj_map.keys())
+        fact_ids: list[str] = []
         for fids in obj_map.values():
             fact_ids.extend(fids)
         conflicts.append(
@@ -142,4 +136,3 @@ def find_conflict_candidates(
         )
 
     return conflicts
-

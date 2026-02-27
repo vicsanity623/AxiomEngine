@@ -7,8 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.ledger import DB_NAME as LEDGER_DB_NAME, initialize_database
-
+from src.ledger import initialize_database
 
 # Use a test DB path so we don't touch the real ledger
 TEST_DB = "test_metacognitive_ledger.db"
