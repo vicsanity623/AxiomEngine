@@ -32,7 +32,7 @@ def run_metacognitive_cycle(db_path: str = DB_NAME) -> None:
     )
 
 
-def prune_integrity_check(db_path: str):
+def prune_integrity_check(db_path: str) -> None:
     """Examine the ledger for facts that are too structurally shallow (weak ADL)
 
     or too old without corroboration, prepare them for potential deletion.
@@ -105,7 +105,7 @@ def prune_integrity_check(db_path: str):
 
 # --- Future Goal: ADL-Driven Inference ---
 # This function would be used once ADL is fully trusted over raw text.
-def retrieve_adl_based_answer(query_atoms):
+def retrieve_adl_based_answer(query_atoms: list) -> None:
     """Query the Synapses table using ADL hashes
 
     instead of full text search on the facts table as placeholder.

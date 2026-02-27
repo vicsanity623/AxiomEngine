@@ -18,6 +18,7 @@ __pycache__/
 *.pyo
 *.pyd
 .python-version
+mypy_annotate.dat
 
 # --- IDE / Editor specific files ---
 .vscode/

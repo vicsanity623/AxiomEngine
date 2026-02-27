@@ -73,8 +73,10 @@ def load_brain_synapses(
 
 
 def to_json_for_viz(
-    db_path: str, include_sources=True, topic_filter=None
-) -> dict:
+    db_path: str,
+    include_sources: bool = True,
+    topic_filter: str | None = None,
+) -> dict[str, Any]:
     """Export ledger facts and edges to JSON format for visualization."""
     facts, relationships = load_facts_and_relationships(db_path)
     if topic_filter:
@@ -102,50 +104,3 @@ def to_json_for_viz(
             and r["fact_id_2"] in neighbor_ids
         ]
     return {"nodes": facts, "edges": relationships}
-
-    # fact_content is already decompressed to str in load_facts_and_relationships
-    nodes = []
-    for f in facts:
-        content = f.get("fact_content") or ""
-        if isinstance(content, bytes):
-            content = _decompress_fact_content(content)
-        nodes.append(
-            {
-                "id": f["fact_id"],
-                "label": content,
-                "full_content": content,
-                "status": f["status"],
-                "value": f["trust_score"],
-                "source_url": f.get("source_url", "") or "",
-            },
-        )
-
-    edges = [
-        {"from": r["fact_id_1"], "to": r["fact_id_2"], "value": r["weight"]}
-        for r in relationships
-    ]
-    return {"nodes": nodes, "edges": edges}
-
-
-def to_json_for_brain_viz(db_path: str):
-    """Format the lexical mesh for visualization using PyVis."""
-    atoms, synapses = load_brain_synapses(db_path)
-    nodes = [
-        {
-            "id": a["word"],
-            "label": a["word"],
-            "value": a["occurrence_count"],
-            "group": "atom",
-        }
-        for a in atoms
-    ]
-    edges = [
-        {
-            "from": s["word_a"],
-            "to": s["word_b"],
-            "value": s["strength"],
-            "title": s["relation_type"],
-        }
-        for s in synapses
-    ]
-    return {"nodes": nodes, "edges": edges}
