@@ -146,9 +146,7 @@ def _is_valid_grammatical_sentence(doc):
     )
     has_verb = any(token.pos_ == "VERB" for token in doc)
 
-    if not has_subject or not has_verb:
-        return False
-    return True
+    return not (not has_subject or not has_verb)
 
 
 def _count_named_entities(doc):
@@ -220,18 +218,14 @@ def _compute_fragment_metadata(doc, raw_sent: str):
         reason_parts.append("lowercase_start")
 
     score = max(0.0, min(1.0, score))
-
-    if score >= 0.8 or score >= 0.5:
-        state = "suspected_fragment"
-    else:
-        state = "unknown"
-
+    state = "suspected_fragment" if score >= 0.8 or score >= 0.5 else "unknown"
     reason = ",".join(reason_parts) if reason_parts else ""
     return score, state, reason
 
 
 def _check_for_contradiction(new_doc, all_existing_facts):
-    """Scans the ledger for direct contradictions.
+    """Scan the ledger for direct contradictions.
+
     Logic: Same Subject + Same Verb + One is Negated ('not') vs One is Positive.
     """
     new_subj = next(
@@ -258,7 +252,8 @@ def _check_for_contradiction(new_doc, all_existing_facts):
         # DECOMPRESS BLOB FOR ANALYSIS
         try:
             decompressed_content = zlib.decompress(content).decode("utf-8")
-        except:
+        except Exception as e:
+            logger.error(f"Decompression failed: {e}")
             # If decompression fails (e.g., checking an old/corrupt record), skip it.
             continue
 
@@ -274,13 +269,19 @@ def _check_for_contradiction(new_doc, all_existing_facts):
         )
         ex_is_negated = any(t.dep_ == "neg" for t in existing_doc)
 
-        if new_subj == ex_subj and new_root == ex_root:
-            if new_is_negated != ex_is_negated:
-                return fact
+        if (
+            new_subj == ex_subj
+            and new_root == ex_root
+            and new_is_negated != ex_is_negated
+        ):
+            return fact
+
+    return None  # Added explicit return statement
 
 
 def extract_facts_from_text(source_url, text_content):
-    """Main processing pipeline.
+    """Analyze and process text content to extract facts.
+
     1. Sanitize
     2. Split into sentences
     3. Filter for Grammar & Entities

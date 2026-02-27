@@ -18,41 +18,36 @@ FILEPATH_FROM_ERROR_PATTERN = re.compile(
     r"(?:-->\s*|\A\s*)(\S+?\.py)(?::\d+:\d+)?", re.MULTILINE
 )
 
-SYSTEM_PROMPT = """\
-OUTPUT FORMAT IS MANDATORY — ANY DEVIATION = RESPONSE IGNORED
+# Stronger template — forces exact indentation and more context
+SYSTEM_PROMPT = """Fix ONLY the Ruff / mypy error(s) shown below in the file {filepath}
 
-Allowed content ONLY:
-• Optional <THOUGHT>explanation of one issue</THOUGHT>
-• One or more complete <EDIT path="…"> blocks
+Respond **EXCLUSIVELY** with:
+- Zero or one <THOUGHT>single short sentence describing the rule being fixed</THOUGHT>
+- One or more complete <EDIT> blocks in this exact nested format — NOTHING else
 
-FORBIDDEN:
-- Any text outside those tags
-- ```python or any code blocks
-- Lists, summaries, "Here is the fix", "### Changes"
-- Combining fixes into one block
-
-Rules (must obey):
-- One <EDIT> per atomic change
-- <SEARCH> = exact lines from MEMORY (indent/whitespace preserved)
-- <REPLACE> = modified version, same indent
-- Max 3 lines in <SEARCH> unless necessary
-- Docstrings: imperative mood
-
-Example ONLY structure:
-
-<THOUGHT>RET504: unnecessary assignment before return</THOUGHT>
-<EDIT path="/path/file.py">
+<EDIT path="{filepath}">
 <SEARCH>
-    x = compute()
-    return x
+exact verbatim lines copied from MEMORY.md INCLUDING ALL leading whitespace/indentation
 </SEARCH>
 <REPLACE>
-    return compute()
+fixed lines keeping THE EXACT SAME indentation level
 </REPLACE>
 </EDIT>
 
-You MUST use only the above format. No exceptions.
-Use MEMORY as exact source for <SEARCH>.
+CRITICAL RULES YOU MUST OBEY:
+- One <EDIT> block per atomic change
+- <SEARCH> must be EXACT copy-paste from the MEMORY.md file (every space, tab, blank line)
+- ALWAYS include 1-2 lines BEFORE and AFTER the changed line in <SEARCH> to preserve correct indentation
+- NEVER dedent, clean, or reformat the <SEARCH> block
+- Docstrings: imperative mood for the first line
+- NO text, NO markdown, NO lists, NO explanations, NO ```python outside the tags
+
+The script will ignore your entire response if you deviate.
+
+Error to fix:
+{error_text}
+
+Use the exact file path in the <EDIT> tag: {filepath}
 """
 
 
@@ -100,7 +95,6 @@ def update_memory_file(filepath: str, file_content: str) -> bool:
             f.write(memory_md_content)
         return True
 
-    # Adding new file
     print(f"[SYSTEM] + Adding '{filepath}' to {MEMORY_FILE}...")
     if not memory_md_content.strip():
         memory_md_content = (
@@ -117,17 +111,6 @@ def update_memory_file(filepath: str, file_content: str) -> bool:
     return True
 
 
-def extract_filepath_from_input(user_input: str) -> str | None:
-    """Extract a Python filepath from the user's input."""
-    match = FILEPATH_FROM_ERROR_PATTERN.search(user_input)
-    if match:
-        detected_path = match.group(1)
-        if not os.path.isabs(detected_path):
-            return os.path.abspath(detected_path)
-        return detected_path
-    return None
-
-
 def apply_edits(response_text, detected_filepath=None):
     """Apply search and replace edits based on AI response."""
     pattern = re.compile(
@@ -141,7 +124,7 @@ def apply_edits(response_text, detected_filepath=None):
     for match in matches:
         found_any_edit_block = True
         filepath = match.group(1).strip()
-        search_text = match.group(2).strip("\n")
+        search_text = match.group(2).strip("\n")  # keep original whitespace
         replace_text = match.group(3).strip("\n")
 
         if not os.path.exists(filepath):
@@ -153,9 +136,7 @@ def apply_edits(response_text, detected_filepath=None):
                 content = f.read()
 
             if search_text in content:
-                content = content.replace(
-                    search_text, replace_text, 1
-                )  # only first occurrence
+                content = content.replace(search_text, replace_text, 1)
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(content)
                 print(f"\n[SYSTEM] ✅ Successfully patched: {filepath}")
@@ -165,7 +146,9 @@ def apply_edits(response_text, detected_filepath=None):
                     f"\n[SYSTEM] ⚠️ Could not find exact <SEARCH> block in {filepath}."
                 )
                 print("   Likely indentation/context mismatch.")
-                print(f"   Provided <SEARCH>:\n---\n{search_text}\n---")
+                print(
+                    f"   Provided <SEARCH> (first 300 chars):\n---\n{search_text[:300]}...\n---"
+                )
         except Exception as e:
             print(f"\n[SYSTEM] ❌ Failed to read/write {filepath}: {e}")
 
@@ -180,12 +163,8 @@ def apply_edits(response_text, detected_filepath=None):
             print(
                 "   No changes applied. The model ignored the mandatory format."
             )
-            print(
-                "   Try re-prompting or switching to a more format-compliant model."
-            )
         else:
             print("\n[SYSTEM] ⚠️ No <EDIT> blocks found. No changes applied.")
-            print("   AI did not propose any valid edits.")
 
     python_blocks = re.findall(
         r"```python\n(.*?)\n```", response_text, re.DOTALL
@@ -221,8 +200,7 @@ def main():
         f"🚀 Barebones Coder (Smart Linter Mode) Initialized (Model: {MODEL})"
     )
     print(
-        "Paste your error snippet(s). DO NOT paste any additional code. "
-        "Press Ctrl+D to submit. Type 'exit' and press Ctrl+D to quit.\n"
+        "Guided mode: enter file path → paste error → auto-builds perfect prompt.\n"
     )
 
     initial_memory_content = load_memory(MEMORY_FILE)
@@ -238,87 +216,77 @@ def main():
             },
         )
     else:
-        print(
-            f"[SYSTEM] 🧠 No memory file '{MEMORY_FILE}' found or it's empty. "
-            "AI will operate with limited context."
-        )
+        print(f"[SYSTEM] 🧠 No memory file '{MEMORY_FILE}' found or empty.")
 
     while True:
         try:
-            print("\nYou (Press Ctrl+D to submit): ")
-            user_input = sys.stdin.read().strip()
+            print("\n" + "=" * 70)
+            print("Enter the FULL path to the Python file to fix")
+            print(
+                "Press Ctrl+D on a blank line when done.\n> ",
+                end="",
+                flush=True,
+            )
 
-            if not user_input:
+            filepath_input = sys.stdin.read().strip()
+            if not filepath_input or filepath_input.lower() in [
+                "exit",
+                "quit",
+            ]:
+                print("\nExiting.")
                 break
-            if user_input.lower() in ["exit", "quit"]:
-                break
-            if not user_input:
+
+            if not os.path.isfile(filepath_input):
+                print(f"[SYSTEM] ❌ File not found: {filepath_input}")
                 continue
 
-            detected_filepath = extract_filepath_from_input(user_input)
-            if detected_filepath:
-                if os.path.exists(detected_filepath):
-                    print(
-                        f"[SYSTEM] Detected file path: '{detected_filepath}' from input."
-                    )
-                    with open(detected_filepath, encoding="utf-8") as f:
-                        file_content_on_disk = f.read()
-                    memory_was_updated = update_memory_file(
-                        detected_filepath, file_content_on_disk
-                    )
-                    if memory_was_updated:
-                        print(
-                            f"[SYSTEM] Memory updated for '{detected_filepath}'. "
-                            "Reloading memory..."
-                        )
-                        reloaded_memory_content = load_memory(MEMORY_FILE)
-                        if (
-                            messages
-                            and messages[0]["role"] == "system"
-                            and "Memory loaded:" in messages[0]["content"]
-                        ):
-                            messages.pop(0)
-                        messages.insert(
-                            0,
-                            {
-                                "role": "system",
-                                "content": f"Memory loaded:\n\n{reloaded_memory_content}",
-                            },
-                        )
-                        print(
-                            "[SYSTEM] Pausing 2s for memory update to settle..."
-                        )
-                        time.sleep(2)
-                else:
-                    print(
-                        f"[SYSTEM] ⚠️ Detected path '{detected_filepath}' does not exist. "
-                        "Cannot add to memory."
-                    )
+            filepath = os.path.abspath(filepath_input)
+            print(f"[SYSTEM] Using file: {filepath}")
 
-            messages.append({"role": "user", "content": user_input})
+            # Update memory
+            with open(filepath, encoding="utf-8") as f:
+                file_content = f.read()
+            if update_memory_file(filepath, file_content):
+                print(f"[SYSTEM] Memory updated for {filepath}. Reloading...")
+                reloaded = load_memory(MEMORY_FILE)
+                if messages and "Memory loaded:" in messages[0]["content"]:
+                    messages.pop(0)
+                messages.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": f"Memory loaded:\n\n{reloaded}",
+                    },
+                )
+                time.sleep(1.5)
 
-            if (
-                len(messages) > 1
-                and messages[-1]["role"] == "user"
-                and "CRITICAL INSTRUCTION" in messages[-1]["content"]
-            ):
-                messages.pop()
-
-            messages.append(
-                {
-                    "role": "user",
-                    "content": """CRITICAL INSTRUCTION — MUST FOLLOW EXACTLY:
-Your response must contain **ONLY** <THOUGHT>...</THOUGHT> (optional)
-and one or more <EDIT path="...">...</EDIT> blocks.
-
-NO explanatory text, NO markdown, NO ```python blocks, NO lists,
-NO summaries outside <THOUGHT>.
-
-If you write anything else the patch script will ignore your entire response.
-
-Apply the requested fix using the exact format shown in the system prompt.""",
-                }
+            print(
+                "\nPaste the FULL error / lint output to fix (multi-line OK)"
             )
+            print(
+                "Press Ctrl+D on a blank line when finished.\n> ",
+                end="",
+                flush=True,
+            )
+
+            error_text = sys.stdin.read().strip()
+            if not error_text:
+                print("[SYSTEM] No error provided. Skipping.")
+                continue
+
+            # Build full prompt
+            full_prompt = SYSTEM_PROMPT.format(
+                filepath=filepath, error_text=error_text
+            )
+
+            # Reinforcement
+            reinforcement = """CRITICAL INSTRUCTION — MUST FOLLOW EXACTLY:
+Your response must contain **ONLY** <THOUGHT>...</THOUGHT> (optional) and one or more <EDIT> blocks.
+NO explanatory text, NO markdown, NO ```python blocks, NO lists.
+If you write anything else the patch will be ignored."""
+
+            messages.append({"role": "user", "content": full_prompt})
+            messages.append({"role": "user", "content": reinforcement})
 
             print("\nAI: \n", end="", flush=True)
             response_text = ""
@@ -331,13 +299,17 @@ Apply the requested fix using the exact format shown in the system prompt.""",
 
             messages.append({"role": "assistant", "content": response_text})
 
-            apply_edits(response_text, detected_filepath)
+            apply_edits(response_text, detected_filepath=filepath)
 
         except KeyboardInterrupt:
             print("\n[SYSTEM] Interrupted by user.")
             break
         except Exception as e:
             print(f"\n[ERROR] {e}")
+
+        print("\nPress Enter for next fix, or type 'exit' + Enter to quit.")
+        if input("> ").strip().lower() in ["exit", "quit"]:
+            break
 
 
 if __name__ == "__main__":
