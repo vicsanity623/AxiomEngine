@@ -10,7 +10,6 @@ import ollama
 MODEL = "qwen2.5-coder:7b-instruct"
 MEMORY_FILE = "MEMORY.md"
 
-# Strict system prompt (rules the model must always follow)
 SYSTEM_PROMPT = """You are an expert Python linter fixer.
 You MUST respond EXCLUSIVELY with <THOUGHT> (optional) and <EDIT> blocks.
 Never output any text, markdown, explanations, or code blocks outside these tags.
@@ -22,9 +21,9 @@ Rules:
 - <REPLACE> must keep THE EXACT SAME indentation level as the original
 - Module-level code (classes, functions) must start with ZERO leading spaces
 - Docstrings: imperative mood for the first line
+- The <SEARCH> block must be pure Python code. NEVER include linter artifacts (like `|`, `/`, `^`, or line numbers) from the error message.
 - The script will completely ignore your response if format is wrong."""
 
-# User prompt template (gets formatted with real file + error)
 USER_PROMPT_TEMPLATE = """Fix ONLY the Ruff / mypy error(s) shown below in the file {filepath}
 
 Respond **EXCLUSIVELY** with:
@@ -43,6 +42,7 @@ fixed lines keeping THE EXACT SAME indentation level
 CRITICAL RULES YOU MUST OBEY:
 - One <EDIT> block per atomic change
 - <SEARCH> must be EXACT copy-paste from the MEMORY.md file (every space, tab, blank line)
+- NEVER include linter artifacts (like `|`, `/`, `^`, or line numbers) in your <SEARCH> block. It must be pure Python code copied ONLY from MEMORY.md.
 - ALWAYS include 1-2 lines BEFORE and AFTER the changed line in <SEARCH>
 - Module-level code (classes, functions) must start with ZERO leading spaces in <SEARCH> and <REPLACE>
 - NEVER dedent, clean, or reformat the <SEARCH> block
@@ -71,9 +71,12 @@ def load_memory(memory_file_path):
 
 
 def extract_snippet(
-    filepath: str, error_text: str, context_window: int = 25
+    filepath: str,
+    error_text: str,
+    context_window: int = 55,
+    max_total_lines: int = 350,
 ) -> str:
-    """Parse error text for line numbers and extract a specific window from the file."""
+    """Parse error text for line numbers and extract a highly targeted window from the file."""
     try:
         with open(filepath, encoding="utf-8") as f:
             lines = f.readlines()
@@ -81,28 +84,40 @@ def extract_snippet(
         print(f"[SYSTEM] ❌ Could not read {filepath}: {e}")
         return ""
 
-    line_numbers = set()
+    pattern = re.compile(
+        r"(?m)^\s*(\d+)\s*\||:(\d+)(?::\d+)?|line\s+(\d+)", re.IGNORECASE
+    )
 
-    # Pattern 1: Standard linter format (e.g., file.py:82:8 or file.py:82:)
-    for match in re.finditer(r":(\d+)(?::\d+)?", error_text):
-        line_numbers.add(int(match.group(1)))
+    found_nums = []
+    for match in pattern.finditer(error_text):
+        for i in (1, 2, 3):
+            val = match.group(i)
+            if val:
+                found_nums.append(int(val))
 
-    # Pattern 2: Ruff / Rust visual context (e.g., " 82 | ")
-    for match in re.finditer(r"(?m)^\s*(\d+)\s*\|", error_text):
-        line_numbers.add(int(match.group(1)))
+    valid_lines = []
+    for num in found_nums:
+        if 1 <= num <= len(lines) and num not in valid_lines:
+            valid_lines.append(num)
 
-    # Pattern 3: Traceback format (e.g., "line 82")
-    for match in re.finditer(r"line\s+(\d+)", error_text, re.IGNORECASE):
-        line_numbers.add(int(match.group(1)))
-
-    if not line_numbers:
+    if not valid_lines:
         print(
-            "[SYSTEM] ⚠️ Could not detect line numbers in error. Loading full file into memory."
+            f"[SYSTEM] ⚠️ Could not detect valid line numbers. Loading first {max_total_lines} lines as fallback."
         )
-        return "".join(lines)
+        return "".join(lines[:max_total_lines])
 
-    min_line = max(1, min(line_numbers))
-    max_line = min(len(lines), max(line_numbers))
+    min_line = min(valid_lines)
+    max_line = max(valid_lines)
+
+    max_spread = max_total_lines - (2 * context_window)
+    if (max_line - min_line) > max_spread:
+        primary = valid_lines[0]
+        print(
+            f"[SYSTEM] ⚠️ Line number spread too large ({max_line - min_line} lines). Anchoring around primary line {primary}."
+        )
+        half_spread = max_spread // 2
+        min_line = max(1, primary - half_spread)
+        max_line = min(len(lines), primary + half_spread)
 
     start_idx = max(0, min_line - 1 - context_window)
     end_idx = min(len(lines), max_line + context_window)
@@ -163,12 +178,10 @@ def update_memory_file(filepath: str, file_content: str) -> bool:
 
 
 def flexible_replace(content: str, search_text: str, replace_text: str):
-    """Attempts to find and replace text, falling back to an indentation-agnostic match."""
-    # 1. Try exact match first
+    """Attempt to find and replace text, fall back to an indentation-agnostic match."""
     if search_text in content:
         return content.replace(search_text, replace_text, 1)
 
-    # 2. Fallback: Try flexible match ignoring exact leading/trailing blank lines and indentations
     search_lines = search_text.splitlines()
     while search_lines and not search_lines[0].strip():
         search_lines.pop(0)
@@ -184,7 +197,6 @@ def flexible_replace(content: str, search_text: str, replace_text: str):
     match_idx = -1
     for i in range(len(content_lines) - search_len + 1):
         window = content_lines[i : i + search_len]
-        # Compare ignoring leading/trailing whitespace
         if all(
             window[j].strip() == search_lines[j].strip()
             for j in range(search_len)
@@ -195,7 +207,6 @@ def flexible_replace(content: str, search_text: str, replace_text: str):
     if match_idx == -1:
         return None
 
-    # Match found! Calculate the base indentation to adapt the replacement text
     window = content_lines[match_idx : match_idx + search_len]
 
     orig_indent = ""
@@ -224,7 +235,6 @@ def flexible_replace(content: str, search_text: str, replace_text: str):
             adjusted_replace_lines.append(newline_char)
             continue
 
-        # Re-indent based on the calculated delta
         if rline.startswith(search_indent):
             adjusted_line = orig_indent + rline[len(search_indent) :]
         else:
@@ -232,11 +242,12 @@ def flexible_replace(content: str, search_text: str, replace_text: str):
 
         adjusted_replace_lines.append(adjusted_line + newline_char)
 
-    # Try to retain original file's newline style for the end of the block
-    if window and not window[-1].endswith(("\r", "\n")) and adjusted_replace_lines:
-        adjusted_replace_lines[-1] = adjusted_replace_lines[-1].rstrip(
-            "\r\n"
-        )
+    if (
+        window
+        and not window[-1].endswith(("\r", "\n"))
+        and adjusted_replace_lines
+    ):
+        adjusted_replace_lines[-1] = adjusted_replace_lines[-1].rstrip("\r\n")
 
     before = content_lines[:match_idx]
     after = content_lines[match_idx + search_len :]
@@ -268,7 +279,6 @@ def apply_edits(response_text, detected_filepath=None):
             with open(filepath, encoding="utf-8") as f:
                 content = f.read()
 
-            # Attempt replacement with robust fallback
             new_content = flexible_replace(content, search_text, replace_text)
 
             if new_content is not None:
@@ -309,9 +319,19 @@ def apply_edits(response_text, detected_filepath=None):
     return edits_made
 
 
+def format_bandwidth(total_bytes: int) -> str:
+    """Format bytes into KB, MB, GB."""
+    if total_bytes < 1024:
+        return f"{total_bytes} B"
+    if total_bytes < 1024 * 1024:
+        return f"{total_bytes / 1024:.2f} KB"
+    if total_bytes < 1024 * 1024 * 1024:
+        return f"{total_bytes / (1024 * 1024):.2f} MB"
+    return f"{total_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
 def main():
     """Run script to edit files according to AI response."""
-    # === FRESH MEMORY ON EVERY RUN ===
     if os.path.exists(MEMORY_FILE):
         os.remove(MEMORY_FILE)
         print("[SYSTEM] 🧹 Wiped MEMORY.md for a fresh session.")
@@ -348,8 +368,6 @@ def main():
             filepath = os.path.abspath(filepath_input)
             print(f"[SYSTEM] Using file: {filepath}")
 
-            # --- DELAYED MEMORY CREATION ---
-            # Wait for user to input error text first before loading into memory.
             print(
                 "\nPaste the FULL error / lint output to fix (multi-line OK)"
             )
@@ -364,10 +382,8 @@ def main():
                 print("[SYSTEM] No error provided. Skipping.")
                 continue
 
-            # Extract just the snippet relevant to the line numbers in the error
             snippet_text = extract_snippet(filepath, error_text)
 
-            # Update memory only with the focused snippet
             if update_memory_file(filepath, snippet_text):
                 print(
                     "[SYSTEM] Memory loaded with targeted snippet. Reloading context..."
@@ -384,13 +400,13 @@ def main():
                 )
                 time.sleep(1.0)
 
-            # Build full prompt
             full_prompt = USER_PROMPT_TEMPLATE.format(
                 filepath=filepath, error_text=error_text
             )
 
             reinforcement = """CRITICAL INSTRUCTION — MUST FOLLOW EXACTLY:
 Your response must contain **ONLY** <THOUGHT>...</THOUGHT> (optional) and one or more <EDIT> blocks.
+The <SEARCH> block MUST strictly contain pure code. DO NOT copy linter prefixes like `|`, `/`, `^`, or line numbers.
 NO explanatory text, NO markdown, NO ```python blocks, NO lists.
 If you write anything else the patch will be ignored."""
 
@@ -400,15 +416,23 @@ If you write anything else the patch will be ignored."""
             print("\nAI: \n", end="", flush=True)
             response_text = ""
 
-            # Use try/except to gracefully catch "Connection refused" if Ollama isn't running
+            prompt_tokens = 0
+            completion_tokens = 0
+            start_time = time.time()
+
             try:
                 stream = ollama.chat(
                     model=MODEL, messages=messages, stream=True
                 )
                 for chunk in stream:
-                    content = chunk["message"]["content"]
+                    content = chunk.get("message", {}).get("content", "")
                     print(content, end="", flush=True)
                     response_text += content
+
+                    # Capture token count data from the final chunks
+                    if chunk.get("done"):
+                        prompt_tokens = chunk.get("prompt_eval_count", 0)
+                        completion_tokens = chunk.get("eval_count", 0)
                 print()
             except Exception as e:
                 err_msg = str(e).lower()
@@ -425,9 +449,24 @@ If you write anything else the patch will be ignored."""
                     continue
                 raise e
 
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            total_tokens = prompt_tokens + completion_tokens
+
+            req_bytes = sum(
+                len(m.get("content", "").encode("utf-8")) for m in messages
+            )
+            res_bytes = len(response_text.encode("utf-8"))
+            total_bytes = req_bytes + res_bytes
+            bw_str = format_bandwidth(total_bytes)
+
             messages.append({"role": "assistant", "content": response_text})
 
             apply_edits(response_text, detected_filepath=filepath)
+
+            print(
+                f"\n[STATS] ⏱️  Time Elapsed: {elapsed_time:.1f}s | 🪙  Total Tokens: {total_tokens} (Prompt: {prompt_tokens}, Completion: {completion_tokens}) | 📶 Bandwidth Used: {bw_str}"
+            )
 
         except KeyboardInterrupt:
             print("\n[SYSTEM] Interrupted by user.")
