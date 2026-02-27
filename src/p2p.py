@@ -1,5 +1,4 @@
-# Axiom - p2p.py
-# Copyright (C) 2026 The Axiom Contributors
+"""Confifgure the logic for the p2p mesh."""
 
 import hashlib
 import logging
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def verify_hash(content, fact_id):
-    """Security Check: Ensures the fact ID is the mathematical hash of the content."""
+    """Ensure the fact ID is the mathematical hash of the content."""
     if not content or not fact_id:
         return False
     calculated_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -26,9 +25,7 @@ def verify_hash(content, fact_id):
 
 
 def sync_with_peer(node_instance, peer_url, db_path: str):
-    """Synchronizes the local ledger AND the peer list.
-    Implements 'Gossip Discovery' to ensure the network loop remains intact.
-    """
+    """Synchronize the local ledger and the peer list. Implement 'Gossip Discovery' to ensure the network loop remains intact."""
     logger.info(
         f"\033[2m--- [P2P Sync] Attempting to sync with peer: {peer_url} ---\033[0m",
     )
@@ -65,7 +62,7 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT fact_id FROM facts")
-        local_fact_ids = set(row[0] for row in cursor.fetchall())
+        local_fact_ids = {row[0] for row in cursor.fetchall()}
 
         missing_fact_ids = list(peer_fact_ids - local_fact_ids)
 
@@ -169,7 +166,8 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
 
 def sync_chain_with_peer(node_instance, peer_url, db_path: str):
     """Sync blockchain from peer: if peer has a longer chain, fetch new blocks and append.
-    Returns (blocks_appended_count, peer_chain_height) for logging.
+
+    Return (blocks_appended_count, peer_chain_height) for logging.
     """
     try:
         headers = {"X-Axiom-Peer": node_instance.advertised_url}
@@ -180,7 +178,7 @@ def sync_chain_with_peer(node_instance, peer_url, db_path: str):
         )
         head_resp.raise_for_status()
         peer_head = head_resp.json()
-        peer_block_id = peer_head.get("block_id")
+        peer_height = int(peer_head.get("height", -1))
         peer_height = int(peer_head.get("height", -1))
         if peer_height < 0:
             return 0, peer_height
@@ -188,10 +186,7 @@ def sync_chain_with_peer(node_instance, peer_url, db_path: str):
         # Use the same db_path as the rest of this node so that
         # chain height reflects the correct ledger file.
         our_head = get_chain_head(db_path=db_path)
-        if our_head is None:
-            our_height = -1
-        else:
-            our_height = our_head[1]
+        our_height = -1 if our_head is None else our_head[1]
 
         if peer_height <= our_height:
             return 0, peer_height

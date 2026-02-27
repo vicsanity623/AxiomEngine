@@ -73,7 +73,7 @@ def load_memory(memory_file_path):
 def extract_snippet(
     filepath: str,
     error_text: str,
-    context_window: int = 55,
+    context_window: int = 30,
     max_total_lines: int = 350,
 ) -> str:
     """Parse error text for line numbers and extract a highly targeted window from the file."""
