@@ -70,6 +70,50 @@ def load_memory(memory_file_path):
         return None
 
 
+def extract_snippet(
+    filepath: str, error_text: str, context_window: int = 25
+) -> str:
+    """Parse error text for line numbers and extract a specific window from the file."""
+    try:
+        with open(filepath, encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        print(f"[SYSTEM] ❌ Could not read {filepath}: {e}")
+        return ""
+
+    line_numbers = set()
+
+    # Pattern 1: Standard linter format (e.g., file.py:82:8 or file.py:82:)
+    for match in re.finditer(r":(\d+)(?::\d+)?", error_text):
+        line_numbers.add(int(match.group(1)))
+
+    # Pattern 2: Ruff / Rust visual context (e.g., " 82 | ")
+    for match in re.finditer(r"(?m)^\s*(\d+)\s*\|", error_text):
+        line_numbers.add(int(match.group(1)))
+
+    # Pattern 3: Traceback format (e.g., "line 82")
+    for match in re.finditer(r"line\s+(\d+)", error_text, re.IGNORECASE):
+        line_numbers.add(int(match.group(1)))
+
+    if not line_numbers:
+        print(
+            "[SYSTEM] ⚠️ Could not detect line numbers in error. Loading full file into memory."
+        )
+        return "".join(lines)
+
+    min_line = max(1, min(line_numbers))
+    max_line = min(len(lines), max(line_numbers))
+
+    start_idx = max(0, min_line - 1 - context_window)
+    end_idx = min(len(lines), max_line + context_window)
+
+    snippet = "".join(lines[start_idx:end_idx])
+    print(
+        f"[SYSTEM] ✂️  Extracted targeted snippet (lines {start_idx + 1} to {end_idx}) for memory context."
+    )
+    return snippet
+
+
 def update_memory_file(filepath: str, file_content: str) -> bool:
     """Add or update a file's content in MEMORY.md."""
     memory_md_content = ""
@@ -93,7 +137,7 @@ def update_memory_file(filepath: str, file_content: str) -> bool:
         if existing_content.strip() == file_content.strip():
             return False
         print(
-            f"[SYSTEM] 🔄 Updating content for '{filepath}' in {MEMORY_FILE}..."
+            f"[SYSTEM] 🔄 Updating snippet for '{filepath}' in {MEMORY_FILE}..."
         )
         memory_md_content = existing_block_pattern.sub(
             lambda m: new_file_block, memory_md_content, count=1
@@ -102,11 +146,11 @@ def update_memory_file(filepath: str, file_content: str) -> bool:
             f.write(memory_md_content)
         return True
 
-    print(f"[SYSTEM] + Adding '{filepath}' to {MEMORY_FILE}...")
+    print(f"[SYSTEM] + Adding snippet for '{filepath}' to {MEMORY_FILE}...")
     if not memory_md_content.strip():
         memory_md_content = (
             "# AI Memory Store\n\n"
-            "This file contains additional context for the AI to reference when performing tasks.\n"
+            "This file contains targeted snippets for the AI to reference when performing tasks.\n"
             "It is automatically loaded into the AI's memory at startup.\n\n---\n\n"
         )
     else:
@@ -116,6 +160,88 @@ def update_memory_file(filepath: str, file_content: str) -> bool:
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         f.write(memory_md_content)
     return True
+
+
+def flexible_replace(content: str, search_text: str, replace_text: str):
+    """Attempts to find and replace text, falling back to an indentation-agnostic match."""
+    # 1. Try exact match first
+    if search_text in content:
+        return content.replace(search_text, replace_text, 1)
+
+    # 2. Fallback: Try flexible match ignoring exact leading/trailing blank lines and indentations
+    search_lines = search_text.splitlines()
+    while search_lines and not search_lines[0].strip():
+        search_lines.pop(0)
+    while search_lines and not search_lines[-1].strip():
+        search_lines.pop()
+
+    if not search_lines:
+        return None
+
+    content_lines = content.splitlines(keepends=True)
+    search_len = len(search_lines)
+
+    match_idx = -1
+    for i in range(len(content_lines) - search_len + 1):
+        window = content_lines[i : i + search_len]
+        # Compare ignoring leading/trailing whitespace
+        if all(
+            window[j].strip() == search_lines[j].strip()
+            for j in range(search_len)
+        ):
+            match_idx = i
+            break
+
+    if match_idx == -1:
+        return None
+
+    # Match found! Calculate the base indentation to adapt the replacement text
+    window = content_lines[match_idx : match_idx + search_len]
+
+    orig_indent = ""
+    search_indent = ""
+    for j in range(search_len):
+        if search_lines[j].strip():
+            orig_line = window[j]
+            match_orig = re.match(r"^([ \t]*)", orig_line)
+            orig_indent = match_orig.group(1) if match_orig else ""
+
+            match_search = re.match(r"^([ \t]*)", search_lines[j])
+            search_indent = match_search.group(1) if match_search else ""
+            break
+
+    replace_lines = replace_text.splitlines()
+    while replace_lines and not replace_lines[0].strip():
+        replace_lines.pop(0)
+    while replace_lines and not replace_lines[-1].strip():
+        replace_lines.pop()
+
+    adjusted_replace_lines = []
+    newline_char = "\r\n" if "\r\n" in content else "\n"
+
+    for rline in replace_lines:
+        if not rline.strip():
+            adjusted_replace_lines.append(newline_char)
+            continue
+
+        # Re-indent based on the calculated delta
+        if rline.startswith(search_indent):
+            adjusted_line = orig_indent + rline[len(search_indent) :]
+        else:
+            adjusted_line = orig_indent + rline.lstrip(" \t")
+
+        adjusted_replace_lines.append(adjusted_line + newline_char)
+
+    # Try to retain original file's newline style for the end of the block
+    if window and not window[-1].endswith(("\r", "\n")) and adjusted_replace_lines:
+        adjusted_replace_lines[-1] = adjusted_replace_lines[-1].rstrip(
+            "\r\n"
+        )
+
+    before = content_lines[:match_idx]
+    after = content_lines[match_idx + search_len :]
+
+    return "".join(before + adjusted_replace_lines + after)
 
 
 def apply_edits(response_text, detected_filepath=None):
@@ -131,7 +257,7 @@ def apply_edits(response_text, detected_filepath=None):
     for match in matches:
         found_any_edit_block = True
         filepath = match.group(1).strip()
-        search_text = match.group(2)  # keep exact whitespace
+        search_text = match.group(2)
         replace_text = match.group(3)
 
         if not os.path.exists(filepath):
@@ -142,19 +268,28 @@ def apply_edits(response_text, detected_filepath=None):
             with open(filepath, encoding="utf-8") as f:
                 content = f.read()
 
-            if search_text in content:
-                content = content.replace(search_text, replace_text, 1)
-                with open(filepath, "w", encoding="utf-8") as f:
-                    f.write(content)
-                print(f"\n[SYSTEM] ✅ Successfully patched: {filepath}")
-                edits_made += 1
+            # Attempt replacement with robust fallback
+            new_content = flexible_replace(content, search_text, replace_text)
+
+            if new_content is not None:
+                if new_content != content:
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(new_content)
+                    print(f"\n[SYSTEM] ✅ Successfully patched: {filepath}")
+                    edits_made += 1
+                else:
+                    print(
+                        f"\n[SYSTEM] ⚠️ Search block found, but resulted in no changes for: {filepath}"
+                    )
             else:
                 print(
-                    f"\n[SYSTEM] ⚠️ Could not find exact <SEARCH> block in {filepath}."
+                    f"\n[SYSTEM] ⚠️ Could not find exact or flexible <SEARCH> block in {filepath}."
                 )
-                print("   Likely indentation/context mismatch.")
                 print(
-                    f"   Provided <SEARCH> (first 400 chars):\n---\n{search_text[:400]}...\n---"
+                    "   Likely context mismatch or the file has drastically changed."
+                )
+                print(
+                    f"   Provided <SEARCH> (first 400 chars):\n---\n{search_text[:400]}\n---"
                 )
         except Exception as e:
             print(f"\n[SYSTEM] ❌ Failed to read/write {filepath}: {e}")
@@ -213,23 +348,8 @@ def main():
             filepath = os.path.abspath(filepath_input)
             print(f"[SYSTEM] Using file: {filepath}")
 
-            # Update memory
-            with open(filepath, encoding="utf-8") as f:
-                file_content = f.read()
-            if update_memory_file(filepath, file_content):
-                print(f"[SYSTEM] Memory updated for {filepath}. Reloading...")
-                reloaded = load_memory(MEMORY_FILE)
-                if messages and "Memory loaded:" in messages[0]["content"]:
-                    messages.pop(0)
-                messages.insert(
-                    0,
-                    {
-                        "role": "system",
-                        "content": f"Memory loaded:\n\n{reloaded}",
-                    },
-                )
-                time.sleep(1.5)
-
+            # --- DELAYED MEMORY CREATION ---
+            # Wait for user to input error text first before loading into memory.
             print(
                 "\nPaste the FULL error / lint output to fix (multi-line OK)"
             )
@@ -243,6 +363,26 @@ def main():
             if not error_text:
                 print("[SYSTEM] No error provided. Skipping.")
                 continue
+
+            # Extract just the snippet relevant to the line numbers in the error
+            snippet_text = extract_snippet(filepath, error_text)
+
+            # Update memory only with the focused snippet
+            if update_memory_file(filepath, snippet_text):
+                print(
+                    "[SYSTEM] Memory loaded with targeted snippet. Reloading context..."
+                )
+                reloaded = load_memory(MEMORY_FILE)
+                if messages and "Memory loaded:" in messages[0]["content"]:
+                    messages.pop(0)
+                messages.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": f"Memory loaded:\n\n{reloaded}",
+                    },
+                )
+                time.sleep(1.0)
 
             # Build full prompt
             full_prompt = USER_PROMPT_TEMPLATE.format(
@@ -259,12 +399,31 @@ If you write anything else the patch will be ignored."""
 
             print("\nAI: \n", end="", flush=True)
             response_text = ""
-            stream = ollama.chat(model=MODEL, messages=messages, stream=True)
-            for chunk in stream:
-                content = chunk["message"]["content"]
-                print(content, end="", flush=True)
-                response_text += content
-            print()
+
+            # Use try/except to gracefully catch "Connection refused" if Ollama isn't running
+            try:
+                stream = ollama.chat(
+                    model=MODEL, messages=messages, stream=True
+                )
+                for chunk in stream:
+                    content = chunk["message"]["content"]
+                    print(content, end="", flush=True)
+                    response_text += content
+                print()
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "connection refused" in err_msg or "errno 61" in err_msg:
+                    print(
+                        "\n\n[SYSTEM] ❌ ERROR: Ollama connection refused. Is the Ollama server running?"
+                    )
+                    print(
+                        "   Fix: Open a new terminal and run 'ollama serve', or launch the Ollama desktop app."
+                    )
+                    # Pop the latest prompts to retry next time
+                    messages.pop()
+                    messages.pop()
+                    continue
+                raise e
 
             messages.append({"role": "assistant", "content": response_text})
 

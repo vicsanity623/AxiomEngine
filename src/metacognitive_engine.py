@@ -1,5 +1,4 @@
-# Axiom - metacognitive_engine.py
-# --- V1.0: CORE METATA-AWARENESS & PRUNING LOGIC ---
+"""Configure the logic for pruning ledger during idle times."""
 
 import logging
 import sqlite3
@@ -16,7 +15,8 @@ TRUST_SCORE_FOR_PRUNING = 2  # Only prune facts with a trust score of 1
 
 
 def run_metacognitive_cycle(db_path: str = DB_NAME):
-    """Runs high-level, slow checks that govern the long-term health and efficiency
+    """Run high-level, slow checks that govern the long-term health and efficiency
+
     of the Lexical Mesh and the Fact Ledger.
     """
     logger.info(
@@ -33,27 +33,28 @@ def run_metacognitive_cycle(db_path: str = DB_NAME):
 
 
 def prune_integrity_check(db_path: str):
-    """Examines the ledger for facts that are too structurally shallow (weak ADL)
-    or too old without corroboration, preparing them for potential deletion.
+    """Examine the ledger for facts that are too structurally shallow (weak ADL)
+
+    or too old without corroboration, prepare them for potential deletion.
     """
-    PRUNE_THRESHOLD_DAYS = 90
+    prune_threshold_days = 90
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    cutoff_date = datetime.now(UTC) - timedelta(days=PRUNE_THRESHOLD_DAYS)
+    cutoff_date = datetime.now(UTC) - timedelta(days=prune_threshold_days)
     cutoff_iso = cutoff_date.isoformat()
 
     logger.info(
-        f"[Meta-Prune] Scanning for stale, uncorroborated data older than {PRUNE_THRESHOLD_DAYS} days...",
+        f"[Meta-Prune] Scanning for stale, uncorroborated data older than {prune_threshold_days} days...",
     )
 
     try:
         cursor.execute(
             """
             SELECT fact_id, adl_summary, trust_score, ingest_timestamp_utc, fragment_state
-            FROM facts 
-            WHERE ingest_timestamp_utc < ? 
+            FROM facts
+            WHERE ingest_timestamp_utc < ?
             AND trust_score <= ?
         """,
             (cutoff_iso, TRUST_SCORE_FOR_PRUNING),
@@ -105,8 +106,9 @@ def prune_integrity_check(db_path: str):
 # --- Future Goal: ADL-Driven Inference ---
 # This function would be used once ADL is fully trusted over raw text.
 def retrieve_adl_based_answer(query_atoms):
-    """Placeholder: Eventually, this will query the Synapses table using ADL hashes
-    instead of full text search on the facts table.
+    """Query the Synapses table using ADL hashes
+
+    instead of full text search on the facts table as placeholder.
     """
     logger.warning(
         "[Metacognition] ADL-Driven Inference Path is under construction.",
