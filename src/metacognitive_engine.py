@@ -14,7 +14,7 @@ ADL_INTEGRITY_THRESHOLD = (
 TRUST_SCORE_FOR_PRUNING = 2  # Only prune facts with a trust score of 1
 
 
-def run_metacognitive_cycle(db_path: str = DB_NAME):
+def run_metacognitive_cycle(db_path: str = DB_NAME) -> None:
     """Run high-level, slow checks that govern the long-term health and efficiency
 
     of the Lexical Mesh and the Fact Ledger.

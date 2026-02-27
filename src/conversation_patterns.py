@@ -1,8 +1,7 @@
 """Define and match conversational patterns for the Axiom engine.
 
 This module provides rule-based pattern matching for interpreting user queries
-and generating appropriate responses. It supports slot-based templates, regex
-compilation, and scoring heuristics to determine the best response for a given input.
+and generating appropriate responses. It supports slot-based templates.
 """
 
 import re
@@ -21,8 +20,7 @@ class ConversationPattern:
     raw_template: str
     response: str
     weight: float = 1.0
-    # Compiled at idle time
-    regex: re.Pattern | None = None
+    regex: re.Pattern[str] | None = None
 
     def compile(self) -> None:
         """Compile the raw_template into a regex.

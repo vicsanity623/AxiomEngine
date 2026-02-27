@@ -1,5 +1,4 @@
-# Axiom - visualize_graph.py
-# Copyright (C) 2026 The Axiom Contributors
+"""Provide functions for visualizing graph data."""
 
 import argparse
 import json
@@ -8,7 +7,7 @@ DB_NAME = "axiom_ledger.db"
 
 
 def get_node_colors(status, is_brain):
-    """Returns raw hex colors for the JS Canvas Renderer."""
+    """Return raw hex colors for the JS Canvas Renderer."""
     if is_brain:
         return "#ff00ff"
     if status == "trusted":
@@ -19,7 +18,7 @@ def get_node_colors(status, is_brain):
 
 
 def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
-    """Injects the 3D Math, Plasma Engine, and SOTA HUD Modal into the specific file."""
+    """Inject the 3D Math, Plasma Engine, and SOTA HUD Modal into the specific file."""
     with open(filepath, encoding="utf-8") as file:
         html = file.read()
 
@@ -36,7 +35,6 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
             width: 100vw; height: 100vh;
         }
         #mynetwork { border: none !important; background-color: #000000 !important; height: 100vh !important; width: 100vw !important; outline: none !important;}
-        
         #hud {
             position: absolute; top: 20px; left: 20px;
             background: rgba(5, 5, 5, 0.95); border: 1px solid #00f0ff;
@@ -46,10 +44,10 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
         }
 
         #axiom-modal {
-            position: absolute; top: 20px; right: -450px; 
+            position: absolute; top: 20px; right: -450px;
             width: 380px; max-height: 85vh;
             background: rgba(5, 8, 12, 0.98);
-            border: 1px solid rgba(0, 240, 255, 0.4); 
+            border: 1px solid rgba(0, 240, 255, 0.4);
             border-left: 4px solid #00f0ff;
             padding: 25px; border-radius: 4px; z-index: 2000;
             box-shadow: -10px 0 40px rgba(0, 0, 0, 1);
@@ -115,7 +113,6 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
                 document.getElementById('hud-physics').style.color = "#22c55e";
                 requestAnimationFrame(renderLoop);
             }});
-            
             // Failsafe if stabilization is too fast
             setTimeout(() => {{ if(physicsActive) network.emit("stabilizationIterationsDone"); }}, 2000);
 
@@ -156,7 +153,7 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
                     let p1 = positions[edge.from], p2 = positions[edge.to];
                     if (!p1 || !p2) return;
                     let d1 = axiomData[edge.from], d2 = axiomData[edge.to];
-                    
+
                     let proj1 = {{x: p1.x * (CAMERA_Z/(CAMERA_Z+d1.z)), y: p1.y * (CAMERA_Z/(CAMERA_Z+d1.z)), s: (CAMERA_Z/(CAMERA_Z+d1.z))}};
                     let proj2 = {{x: p2.x * (CAMERA_Z/(CAMERA_Z+d2.z)), y: p2.y * (CAMERA_Z/(CAMERA_Z+d2.z)), s: (CAMERA_Z/(CAMERA_Z+d2.z))}};
                     let dx = proj2.x - proj1.x, dy = proj2.y - proj1.y;
@@ -182,7 +179,7 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
                 ctx.globalCompositeOperation = "source-over";
                 for (let nodeId in positions) {{
                     let pos = positions[nodeId], data = axiomData[nodeId];
-                    if (!data) continue; 
+                    if (!data) continue;
                     let s_ = CAMERA_Z / (CAMERA_Z + data.z);
                     let proj = {{x: pos.x * s_, y: pos.y * s_, s: s_}};
                     let size = (Math.min(data.value * 3 + 10, 40)) * proj.s;
@@ -204,6 +201,7 @@ def inject_sota_engine(filepath, total_nodes, node_data_json, mode_label):
 
 
 def build_pyvis_html(out_path, data, mode_label, is_brain):
+    """Construct HTML using pyvis network."""
     from pyvis.network import Network
 
     nodes, edges = data["nodes"], data["edges"]

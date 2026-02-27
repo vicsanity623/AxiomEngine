@@ -63,11 +63,11 @@ def process_line(line: str) -> Result | None:
         return Result(
             filename=filename,
             start_line=int(st_line),
+            kind=mypy_to_github[kind],
+            message=message,
             start_col=int(st_col) if st_col is not None else None,
             end_line=int(end_line) if end_line is not None else None,
             end_col=int(end_col) if end_col is not None else None,
-            kind=mypy_to_github[kind],
-            message=message,
         )
     return None
 

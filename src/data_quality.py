@@ -1,6 +1,5 @@
-"""Axiom - data_quality.py
+"""Detect Duplicates.
 
-Local-only helpers for fact deduplication and simple conflict detection.
 These are designed for small, throttled idle tasks, not full offline jobs.
 """
 
@@ -10,7 +9,7 @@ import zlib
 from dataclasses import dataclass
 
 
-def _safe_text(raw) -> str:
+def _safe_text(raw: bytes | bytearray | str | None) -> str:
     if raw is None:
         return ""
     if isinstance(raw, (bytes, bytearray)):
@@ -18,7 +17,7 @@ def _safe_text(raw) -> str:
             return zlib.decompress(raw).decode("utf-8")
         except Exception:
             try:
-                return raw.decode("utf-8", errors="ignore")  # type: ignore[arg-type]
+                return raw.decode("utf-8", errors="ignore")
             except Exception:
                 return ""
     return str(raw)

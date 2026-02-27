@@ -1,5 +1,4 @@
-# Axiom - universal_extractor.py
-# Copyright (C) 2026 The Axiom Contributors
+"""Contain and configure utility functions for extracting content from various sources."""
 
 import logging
 from datetime import datetime
@@ -28,8 +27,11 @@ RSS_SOURCES = [
 
 
 class ContentSanitizer:
+    """Define the class for cleanup."""
+
     @staticmethod
     def is_valid_sentence(text):
+        """Check the sentence structure."""
         text = text.strip()
         if len(text) < 45 or len(text) > 500:
             return False
@@ -43,12 +45,11 @@ class ContentSanitizer:
         ]
         if any(g in text.lower() for g in garbage):
             return False
-        if not text[0].isupper() or text[-1] not in '.!?"':
-            return False
-        return True
+        return not (text[0].isupper() and text[-1] in '.!?"')
 
     @staticmethod
     def clean_text_block(raw_text, topic):
+        """Clean the block of text for sentence cleanup."""
         if not raw_text:
             return ""
         clean_paragraphs = []
@@ -70,8 +71,9 @@ class ContentSanitizer:
 
 
 def _manual_bs4_extraction(html):
-    """Fallback extractor using BeautifulSoup.
-    Used if Trafilatura fails (common in standalone builds).
+    """Fallback to the extractor using BeautifulSoup.
+
+    Use if Trafilatura fails (common in standalone builds).
     """
     soup = BeautifulSoup(html, "html.parser")
     for script in soup(["script", "style", "nav", "footer", "header"]):
@@ -82,7 +84,7 @@ def _manual_bs4_extraction(html):
 
 
 def _fetch_article_text(url, timeout=12):
-    """Fetches article text with a robust fallback for standalone builds."""
+    """Fetch article text with a robust fallback for standalone builds."""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -117,6 +119,7 @@ def _fetch_article_text(url, timeout=12):
 
 
 def find_and_extract(topic, max_sources=3):
+    """Navigate source feed to identify extract points."""
     logger.info(
         f"\033[2m--- [Pathfinder] Seeking sources for '{topic}'... ---\033[0m",
     )
@@ -192,7 +195,8 @@ def find_and_extract(topic, max_sources=3):
                                 data["timestamp"] = entry_time
                             extracted_content.append(data)
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
             continue
 
     logger.info(f"Success. Found {len(extracted_content)} valid sources.")

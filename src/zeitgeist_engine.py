@@ -1,5 +1,4 @@
-# Axiom - zeitgeist_engine.py
-# Copyright (C) 2026 The Axiom Contributors
+"""Configure and set parser."""
 
 import logging
 from collections import Counter
@@ -75,13 +74,13 @@ IGNORED_ENTITIES = {
 
 
 def get_trending_topics(top_n=100):
-    """Identifies trending topics using Named Entity Recognition (NER) on RSS headlines.
-    Filters out noise to find substantial subjects.
+    """Identify trending topics using Named Entity Recognition (NER) on RSS headlines.
+
+    Filter out noise to find substantial subjects.
     """
     all_entities = []
 
-    # Standard Watch List: A fallback set of important, high-value topics if dynamic discovery fails.
-    DEFAULT_WATCH_LIST = [
+    default_watch_list = [
         "Artificial Intelligence",
         "Economy",
         "SpaceX",
@@ -130,7 +129,6 @@ def get_trending_topics(top_n=100):
                     all_entities.append(text)
 
         except Exception as e:
-            # Log that an individual feed failed, but keep running other feeds
             logger.debug(f"[Zeitgeist] Failed to process feed {feed_url}: {e}")
             continue
 
@@ -138,7 +136,7 @@ def get_trending_topics(top_n=100):
         logger.info(
             "[Zeitgeist] No substantial topics found via NER. Defaulting to standard watch list.",
         )
-        return DEFAULT_WATCH_LIST[:top_n]  # Return the static list
+        return default_watch_list[:top_n]
 
     topic_counts = Counter(all_entities)
 
@@ -155,9 +153,8 @@ def get_trending_topics(top_n=100):
 
     result = unique_topics[:top_n]
 
-    # --- NEW LOGIC: Ensure we always return at least one default topic if dynamic list is too short ---
     if len(result) < top_n:
-        for default_topic in DEFAULT_WATCH_LIST:
+        for default_topic in default_watch_list:
             if (
                 default_topic not in result
                 and default_topic not in unique_topics

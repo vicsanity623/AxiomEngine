@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
-# Axiom - view_ledger.py
-# Copyright (C) 2026 The Axiom Contributors
-# --- V3.4: DYNAMIC DB PATHING FOR INSPECTION UTILITY ---
+"""PATHING CONFIG FOR INSPECTION UTILITY."""
 
 import argparse
 import os
@@ -19,11 +16,12 @@ RESET = "\033[0m"
 
 
 def print_header(text):
+    """Show the header for this log stream."""
     print(f"\n{CYAN}=== {text} ==={RESET}")
 
 
 def ensure_ledger_schema(db_path: str) -> None:
-    """If the DB has no facts table (e.g. fresh or after reset), initialize schema."""
+    """Initialize schema for empty or missing."""
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     try:
@@ -38,6 +36,7 @@ def ensure_ledger_schema(db_path: str) -> None:
 
 
 def print_stats(db_path: str):
+    """Show stats as status from synapses and lexicon."""
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
@@ -50,7 +49,7 @@ def print_stats(db_path: str):
         try:
             cur.execute("SELECT COUNT(*) FROM fact_relationships")
             rels = cur.fetchone()[0]
-        except:
+        except sqlite3.Error:
             rels = 0
 
         try:
@@ -58,8 +57,9 @@ def print_stats(db_path: str):
             atoms = cur.fetchone()[0]
             cur.execute("SELECT COUNT(*) FROM synapses")
             synapses = cur.fetchone()[0]
-        except:
+        except Exception as e:
             atoms, synapses = 0, 0
+            print(f"Error: {e}")
 
         print_header("LEDGER & MESH STATISTICS")
         print(f"Total Facts:        {total_facts}")
@@ -68,7 +68,6 @@ def print_stats(db_path: str):
         print(f"Neural Synapses:    {synapses}")
         print("-" * 30)
 
-        # Always show trusted (verified), disputed, uncorroborated (0 if missing)
         status_counts = {"trusted": 0, "disputed": 0, "uncorroborated": 0}
         for status, count in stats:
             if status in status_counts:
@@ -83,7 +82,6 @@ def print_stats(db_path: str):
             )
             print(f"{color}{label.ljust(20)}: {count}{RESET}")
 
-        # Optional fragment statistics (available on newer schemas).
         try:
             cur.execute(
                 "SELECT fragment_state, COUNT(*) FROM facts GROUP BY fragment_state"
@@ -106,9 +104,8 @@ def print_stats(db_path: str):
                 print(
                     f"{PINK}{'fragments (confirmed)'.ljust(20)}: {frag_counts['confirmed_fragment']}{RESET}"
                 )
-        except Exception:
-            # Older ledgers without fragment columns: silently skip.
-            pass
+        except Exception as e:
+            print(f"Error: {e}")
 
     except Exception as e:
         print(f"Error reading stats: {e}")
@@ -116,7 +113,8 @@ def print_stats(db_path: str):
         conn.close()
 
 
-def print_brain(db_path: str, limit=15):  # <-- Added db_path
+def print_brain(db_path: str, limit=15):
+    """Specify and display db_path of brain for nodes and peers."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -125,8 +123,8 @@ def print_brain(db_path: str, limit=15):  # <-- Added db_path
         print_header(f"TOP NEURAL SYNAPSES (Limit: {limit})")
         cur.execute(
             """
-            SELECT word_a, word_b, relation_type, strength 
-            FROM synapses 
+            SELECT word_a, word_b, relation_type, strength
+            FROM synapses
             ORDER BY strength DESC LIMIT ?
         """,
             (limit,),
@@ -159,7 +157,8 @@ def print_brain(db_path: str, limit=15):  # <-- Added db_path
         conn.close()
 
 
-def print_facts(db_path: str, limit=20):  # <-- Added db_path
+def print_facts(db_path: str, limit=20):
+    """Process facts to print as decompressed content."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -182,21 +181,17 @@ def print_facts(db_path: str, limit=20):  # <-- Added db_path
             else (RED if status == "disputed" else GRAY)
         )
 
-        # --- DECOMPRESS CONTENT HERE (Crucial Step) ---
         try:
-            # The content is now a compressed BLOB (bytes) from ledger.py
             fact_content = zlib.decompress(r["fact_content"]).decode("utf-8")
         except (TypeError, zlib.error):
             fact_content = f"ERROR: Could not decompress fact content (ID: {r['fact_id'][:8]})."
 
-        # Indicator for brain processing
         processed = (
             f"{PINK}◈{RESET}"
             if r.get("lexically_processed")
             else f"{GRAY}◇{RESET}"
         )
 
-        # Calculate word count and derive fragment indicator using stored metadata when available.
         word_count = len(fact_content.split())
         frag_state = r.get("fragment_state", "unknown")
         frag_score = r.get("fragment_score", 0.0) or 0.0
@@ -206,7 +201,6 @@ def print_facts(db_path: str, limit=20):  # <-- Added db_path
         elif frag_state == "suspected_fragment" or frag_score >= 0.5:
             integrity = f"{RED}FRAGMENT?{RESET}"
         else:
-            # Legacy heuristic fallback on very short sentences.
             integrity = (
                 f"{GREEN}COMPLETE{RESET}"
                 if word_count > 8
@@ -216,7 +210,7 @@ def print_facts(db_path: str, limit=20):  # <-- Added db_path
         print(
             f"{color}[{status.upper()}]{RESET} {processed} Trust: {r['trust_score']} | Words: {word_count} | {integrity}"
         )
-        print(f"   {fact_content}")  # Print the DECOMPRESSED content
+        print(f"   {fact_content}")
         print(f"   {GRAY}Source: {r['source_url']}{RESET}")
         print()
 
@@ -243,7 +237,6 @@ if __name__ == "__main__":
         default=10,
         help="Number of items to show",
     )
-    # --- NEW: ADD ARGUMENT FOR DB PATH ---
     parser.add_argument(
         "--db",
         type=str,

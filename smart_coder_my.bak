@@ -1,7 +1,8 @@
-"""Smart Coder - Autonomous Linter Fixer"""
+"""Smart Coder - Autonomous Mypy Linter Fixer"""
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -11,21 +12,20 @@ import ollama
 MODEL = "qwen2.5-coder:7b-instruct"
 MEMORY_FILE = "MEMORY.md"
 
-SYSTEM_PROMPT = """You are an expert Python linter fixer.
+SYSTEM_PROMPT = """You are an expert Python Mypy type-hint fixer.
 You MUST respond EXCLUSIVELY with <THOUGHT> (optional) and <EDIT> blocks.
 Never output any text, markdown, explanations, or code blocks outside these tags.
 
 Rules:
-- One <EDIT> per atomic change
-- <SEARCH> must be EXACT verbatim copy-paste from MEMORY.md (every space, tab, blank line, exact indentation)
-- ALWAYS include 1-2 lines BEFORE and AFTER the changed section in <SEARCH>
-- <REPLACE> must keep THE EXACT SAME indentation level as the original
-- Module-level code (classes, functions) must start with ZERO leading spaces
-- Docstrings: imperative mood for the first line
+- One <EDIT> per atomic change.
+- <SEARCH> must be EXACT verbatim copy-paste from MEMORY.md (every space, tab, blank line, exact indentation).
+- ALWAYS include 1-2 lines BEFORE and AFTER the changed section in <SEARCH>.
+- <REPLACE> must keep THE EXACT SAME indentation level as the original.
+- When adding type hints (like List, Dict, Any, Optional), ensure you also import them from `typing` if missing.
 - The <SEARCH> block must be pure Python code. NEVER include linter artifacts (like `|`, `/`, `^`, or line numbers) from the error message.
 - The script will completely ignore your response if format is wrong."""
 
-USER_PROMPT_TEMPLATE = """Fix ONLY the Ruff / mypy error(s) shown below in the file {filepath}
+USER_PROMPT_TEMPLATE = """Fix ONLY the Mypy error(s) shown below in the file {filepath}
 
 Respond **EXCLUSIVELY** with:
 - Zero or one <THOUGHT>single short sentence describing the rule being fixed</THOUGHT>
@@ -41,14 +41,12 @@ fixed lines keeping THE EXACT SAME indentation level
 </EDIT>
 
 CRITICAL RULES YOU MUST OBEY:
-- One <EDIT> block per atomic change
-- <SEARCH> must be EXACT copy-paste from the MEMORY.md file (every space, tab, blank line)
+- One <EDIT> block per atomic change.
+- <SEARCH> must be EXACT copy-paste from the MEMORY.md file (every space, tab, blank line).
 - NEVER include linter artifacts (like `|`, `/`, `^`, or line numbers) in your <SEARCH> block. It must be pure Python code copied ONLY from MEMORY.md.
-- ALWAYS include 1-2 lines BEFORE and AFTER the changed line in <SEARCH>
-- Module-level code (classes, functions) must start with ZERO leading spaces in <SEARCH> and <REPLACE>
-- NEVER dedent, clean, or reformat the <SEARCH> block
-- Docstrings: imperative mood for the first line
-- NO text, NO markdown, NO lists, NO explanations, NO ```python outside the tags
+- ALWAYS include 1-2 lines BEFORE and AFTER the changed line in <SEARCH>.
+- NEVER dedent, clean, or reformat the <SEARCH> block.
+- NO text, NO markdown, NO lists, NO explanations, NO ```python outside the tags.
 
 The script will ignore your entire response if you deviate.
 
@@ -299,23 +297,11 @@ def apply_edits(response_text, detected_filepath=None):
                 print(
                     "   Likely context mismatch or the file has drastically changed."
                 )
-                print(
-                    f"   Provided <SEARCH> (first 400 chars):\n---\n{search_text[:400]}\n---"
-                )
         except Exception as e:
             print(f"\n[SYSTEM] ❌ Failed to read/write {filepath}: {e}")
 
     if not found_any_edit_block:
-        raw_code_block_pattern = re.compile(
-            r"```python\n(.*?)\n```", re.DOTALL
-        )
-        if raw_code_block_pattern.search(response_text):
-            print(
-                "\n[SYSTEM] ❌ AI output plain code block(s) instead of <EDIT> format."
-            )
-            print("   No changes applied.")
-        else:
-            print("\n[SYSTEM] ⚠️ No <EDIT> blocks found. No changes applied.")
+        print("\n[SYSTEM] ⚠️ No valid <EDIT> blocks found. No changes applied.")
 
     return edits_made
 
@@ -331,44 +317,66 @@ def format_bandwidth(total_bytes: int) -> str:
     return f"{total_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
-def get_next_ruff_error():
-    """Run Ruff format and check, then parse the output for the first error."""
-    print("[SYSTEM] 🧹 Running 'ruff format .' ...")
+def run_ruff_checks() -> bool:
+    """Run Ruff checks to act as a gatekeeper. Returns True if codebase is clean."""
+    print(
+        "[SYSTEM] 🧹 Verifying codebase with 'ruff format .' and 'ruff check' ..."
+    )
     subprocess.run(  # noqa: S603
         [sys.executable, "-m", "ruff", "format", "."], capture_output=True
     )
 
-    print("[SYSTEM] 🔍 Running 'ruff check' ...")
     result = subprocess.run(  # noqa: S603
         [sys.executable, "-m", "ruff", "check"], capture_output=True, text=True
+    )
+    stdout = result.stdout.strip()
+
+    return bool(
+        not stdout or result.returncode == 0 or "Found 0 errors" in stdout
+    )
+
+
+def get_next_mypy_error():
+    """Run Mypy check, then parse the output for the first error."""
+    print("[SYSTEM] 🔍 Running 'mypy' checks ...")
+    result = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            "-m",
+            "mypy",
+            ".",
+            "--show-error-end",
+            "--platform",
+            "darwin",
+        ],
+        capture_output=True,
+        text=True,
     )
 
     stdout = result.stdout.strip()
 
-    if not stdout or result.returncode == 0 or "Found 0 errors" in stdout:
+    if not stdout or "Success: no issues found" in stdout:
         return None, None
 
-    blocks = re.split(r"\n\s*\n", stdout)
+    lines = stdout.splitlines()
 
-    for block in blocks:
-        block = block.strip()
-        match = re.search(r"^([a-zA-Z0-9_/\.\-\\]+\.py):\d+:\d+:", block)
-        if not match:
-            match = re.search(
-                r"-->\s*([a-zA-Z0-9_/\.\-\\]+\.py):\d+:\d+", block
-            )
+    for line in lines:
+        line = line.strip()
+        match = re.search(r"^([a-zA-Z0-9_/\.\-\\]+\.py):\d+:.*?error:.*", line)
 
         if match:
             filepath = os.path.abspath(match.group(1))
-            return filepath, block
+            return filepath, line
 
     return None, None
 
 
 def main():
     """Run script to edit files according to AI response autonomously."""
-    print(f"🚀 Smart Coder Initialized (Model: {MODEL})")
-    print("Autonomous mode: format -> check -> auto patch -> loop.\n")
+    print(f"🚀 Smart Coder Initialized for Mypy (Model: {MODEL})")
+    print(
+        "Autonomous mode: format -> ruff check -> mypy check -> auto patch -> loop.\n"
+    )
 
     consecutive_failures = 0
     last_error_text = ""
@@ -379,17 +387,63 @@ def main():
                 os.remove(MEMORY_FILE)
                 print("[SYSTEM] 🧹 Wiped MEMORY.md for a fresh session.")
 
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            print("[SYSTEM] 🧠 Fresh memory session started.")
             print("\n" + "=" * 70)
 
-            filepath, error_text = get_next_ruff_error()
+            if not run_ruff_checks():
+                print("\n[SYSTEM] ❌ ABORTING: Ruff check failed!")
+                print(
+                    "Mypy modifications can introduce Ruff errors if they are not formatted."
+                )
+                print(
+                    "Please run `python smart_coder.py` to fix all Ruff errors, then return here."
+                )
+                break
+
+            filepath, error_text = get_next_mypy_error()
 
             if not filepath or not error_text:
                 print(
-                    "\n🎉 [SYSTEM] ALL CLEAR! No Ruff errors found. Your codebase is clean!"
+                    "\n🎉 [SYSTEM] ALL CLEAR! No Mypy errors found. Your codebase is fully typed!"
                 )
                 break
+
+            if "Library stubs not installed for" in error_text:
+                lib_match = re.search(
+                    r'Library stubs not installed for "([^"]+)"', error_text
+                )
+                if lib_match:
+                    lib = lib_match.group(1)
+                    print(
+                        f"\n[SYSTEM] 🛠️ Missing Stub Detected! Auto-installing missing stubs for '{lib}'..."
+                    )
+                    try:
+                        uv_path = shutil.which("uv")
+                        if not uv_path:
+                            raise FileNotFoundError("uv not found on PATH")
+
+                        subprocess.run(  # noqa: S603
+                            [uv_path, "pip", "install", f"types-{lib}"],
+                            check=True,
+                        )
+                    except Exception:
+                        print(
+                            "[SYSTEM] ⚠️ 'uv pip' failed, falling back to standard pip..."
+                        )
+                        subprocess.run(  # noqa: S603
+                            [
+                                sys.executable,
+                                "-m",
+                                "pip",
+                                "install",
+                                f"types-{lib}",
+                            ]
+                        )
+
+                    print(
+                        "[SYSTEM] ⏳ Waiting 2 seconds for environment to update..."
+                    )
+                    time.sleep(2)
+                    continue
 
             if error_text == last_error_text:
                 consecutive_failures += 1
@@ -405,29 +459,13 @@ def main():
                 print(error_text)
                 break
 
-            print("Enter the FULL path to the Python file to fix")
-            print("Press Ctrl+D on a blank line when done.\n> " + filepath)
-
-            if not os.path.isfile(filepath):
-                print(f"[SYSTEM] ❌ Auto-detected file not found: {filepath}")
-                time.sleep(2)
-                continue
-
-            print(
-                "\nPaste the FULL error / lint output to fix (multi-line OK)"
-            )
-            print(
-                "Press Ctrl+D on a blank line when finished.\n> "
-                + error_text
-                + "\n"
-            )
+            print("\n[SYSTEM] Found Mypy Error:")
+            print(f"> {error_text}\n")
 
             snippet_text = extract_snippet(filepath, error_text)
 
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             if update_memory_file(filepath, snippet_text):
-                print(
-                    "[SYSTEM] Memory loaded with targeted snippet. Reloading context..."
-                )
                 reloaded = load_memory(MEMORY_FILE)
                 messages.insert(
                     1,
@@ -442,31 +480,33 @@ def main():
                 filepath=filepath, error_text=error_text
             )
 
-            reinforcement = """CRITICAL INSTRUCTION — MUST FOLLOW EXACTLY:
-Your response must contain **ONLY** <THOUGHT>...</THOUGHT> (optional) and one or more <EDIT> blocks.
+            reinforcement = f"""CRITICAL INSTRUCTIONS FOR AI:
+1. Your entire response MUST consist ONLY of XML tags: <THOUGHT>...</THOUGHT> and <EDIT>...</EDIT>.
+2. NEVER use markdown formatting (e.g., no ```python or ```).
+3. The <SEARCH> block MUST be an exact verbatim substring from MEMORY.md. Do not hallucinate code.
+4. If you add type hints like List or Dict, ensure `typing` is imported.
 
-⚠️ WARNING: The error text shows visual artifacts (like line numbers, `|`, `/`, `^`).
-NEVER include these in the <SEARCH> block. Extract pure code ONLY from MEMORY.md.
-
-[BAD EXAMPLE]
+Example of EXACT VALID OUTPUT FORMAT:
+<THOUGHT>Add return type hint List[Dict[str, Any]] to the function.</THOUGHT>
+<EDIT path="{filepath}">
 <SEARCH>
-/         except Exception:
-|             continue
+def process_data(data):
+    return [data]
 </SEARCH>
+<REPLACE>
+from typing import List, Dict, Any
 
-[GOOD EXAMPLE]
-<SEARCH>
-        except Exception:
-            continue
-</SEARCH>
+def process_data(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [data]
+</REPLACE>
+</EDIT>
 
-NO explanatory text, NO markdown, NO ```python blocks, NO lists.
-If you write anything else the patch will be ignored."""
+Do not write anything outside of these tags. Any deviation will cause a critical failure."""
 
             messages.append({"role": "user", "content": full_prompt})
             messages.append({"role": "user", "content": reinforcement})
 
-            print("\nAI: \n", end="", flush=True)
+            print("AI: \n", end="", flush=True)
             response_text = ""
 
             prompt_tokens = 0
@@ -492,9 +532,6 @@ If you write anything else the patch will be ignored."""
                     print(
                         "\n\n[SYSTEM] ❌ ERROR: Ollama connection refused. Is the Ollama server running?"
                     )
-                    print(
-                        "   Fix: Open a new terminal and run 'ollama serve', or launch the Ollama desktop app."
-                    )
                     break
                 raise e
 
@@ -509,8 +546,6 @@ If you write anything else the patch will be ignored."""
             total_bytes = req_bytes + res_bytes
             bw_str = format_bandwidth(total_bytes)
 
-            messages.append({"role": "assistant", "content": response_text})
-
             edits_made = apply_edits(response_text, detected_filepath=filepath)
 
             print(
@@ -519,9 +554,9 @@ If you write anything else the patch will be ignored."""
 
             if edits_made > 0:
                 print(
-                    "\n[SYSTEM] ⏳ Fix applied. Waiting 5 seconds before next cycle to ensure disk sync..."
+                    "\n[SYSTEM] ⏳ Mypy fix applied. Waiting 3 seconds before next cycle to ensure disk sync..."
                 )
-                time.sleep(5)
+                time.sleep(3)
             else:
                 print(
                     "\n[SYSTEM] ⚠️ No edits successfully applied. Re-looping in 2 seconds..."

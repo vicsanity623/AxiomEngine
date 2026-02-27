@@ -1,5 +1,4 @@
-# Axiom - synthesizer.py
-# Copyright (C) 2026 The Axiom Contributors
+"""Module for synthesizing data using natural language processing."""
 
 import logging
 import zlib
@@ -41,9 +40,9 @@ IGNORED_ENTITIES = {
 
 
 def get_weighted_entities(text):
-    """Extracts entities and assigns a 'relevance weight'.
-    People/Orgs are worth more points than Locations.
-    Returns a dictionary: { 'entity_name': weight }
+    """Extract entities and assigns a 'relevance weight'.
+
+    Return a dictionary: { 'entity_name': weight }
     """
     if not text or not NLP_MODEL:
         return {}
@@ -75,9 +74,9 @@ def get_weighted_entities(text):
 
 
 def link_related_facts(new_facts_batch, db_path: str | None = None):
-    """Compares a batch of new facts against the ledger.
-    Creates links and reinforces Neural Synapses between concepts.
-    db_path: ledger to use (for peer nodes with a different DB).
+    """Compare a batch of new facts against the ledger.
+
+    Create links and reinforces Neural Synapses between concepts.
     """
     if not NLP_MODEL or not new_facts_batch:
         return

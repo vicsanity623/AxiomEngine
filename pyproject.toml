@@ -75,6 +75,9 @@ package = true
 
 [tool.mypy]
 files = ["src/"]
+exclude = [
+    "tools/mypy_annotate.py",
+]
 enable_error_code = [
     "truthy-bool",
     "mutable-override",

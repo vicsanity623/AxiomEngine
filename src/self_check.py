@@ -1,7 +1,6 @@
-"""Axiom - self_check.py
+"""Check for the /think endpoint.
 
-Deterministic self-query checks for the /think endpoint.
-These are light sanity checks, not full tests.
+Conduct light sanity checks, not full tests.
 """
 
 from dataclasses import dataclass
@@ -11,6 +10,8 @@ import requests
 
 @dataclass
 class SelfCheckCase:
+    """Represents a self-check case for the /think endpoint."""
+
     query: str
     must_contain: list[str]
 

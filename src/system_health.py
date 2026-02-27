@@ -9,6 +9,7 @@ from typing import Any
 
 
 def compute_health_snapshot(db_path: str) -> dict[str, Any]:
+    """Capture a health report and deliver it."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     snapshot: dict[str, Any] = {}

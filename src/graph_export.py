@@ -7,7 +7,7 @@ from typing import Any  # Added for type hinting consistency
 # DB_NAME removed. All functions now require db_path.
 
 
-def _decompress_fact_content(raw):
+def _decompress_fact_content(raw: bytes | str | None) -> str:
     """Return decompressed fact text for viz/JSON; raw may be bytes (BLOB) or str."""
     if raw is None:
         return ""
@@ -40,14 +40,16 @@ def load_facts_and_relationships(
             "SELECT fact_id_1, fact_id_2, weight FROM fact_relationships",
         )
         relationships = [dict(row) for row in cur.fetchall()]
-    except Exception:
-        facts, relationships = [], []
+    except Exception as e:
+        print(f"Error loading facts and relationships: {e}")
+        conn.close()
+        return [], []
     conn.close()
     return facts, relationships
 
 
 def load_brain_synapses(
-    db_path: str, min_strength=2
+    db_path: str, min_strength: int = 2
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Fetch atoms and synapses for brain visualization at a given minimum strength."""
     conn = sqlite3.connect(db_path)
@@ -70,7 +72,9 @@ def load_brain_synapses(
     return atoms, synapses
 
 
-def to_json_for_viz(db_path: str, include_sources=True, topic_filter=None):
+def to_json_for_viz(
+    db_path: str, include_sources=True, topic_filter=None
+) -> dict:
     """Export ledger facts and edges to JSON format for visualization."""
     facts, relationships = load_facts_and_relationships(db_path)
     if topic_filter:
@@ -97,6 +101,7 @@ def to_json_for_viz(db_path: str, include_sources=True, topic_filter=None):
             if r["fact_id_1"] in neighbor_ids
             and r["fact_id_2"] in neighbor_ids
         ]
+    return {"nodes": facts, "edges": relationships}
 
     # fact_content is already decompressed to str in load_facts_and_relationships
     nodes = []
