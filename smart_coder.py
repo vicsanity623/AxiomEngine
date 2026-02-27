@@ -1,4 +1,4 @@
-"""Fast Coder Module"""
+"""Smart Coder - Guided Linter Fixer"""
 
 import os
 import re
@@ -10,16 +10,22 @@ import ollama
 MODEL = "qwen2.5-coder:7b-instruct"
 MEMORY_FILE = "MEMORY.md"
 
-MEMORY_FILE_BLOCK_PATTERN = re.compile(
-    r"## File Contents: (.*?)\n```python\n(.*?)\n```\n", re.DOTALL
-)
+# Strict system prompt (rules the model must always follow)
+SYSTEM_PROMPT = """You are an expert Python linter fixer.
+You MUST respond EXCLUSIVELY with <THOUGHT> (optional) and <EDIT> blocks.
+Never output any text, markdown, explanations, or code blocks outside these tags.
 
-FILEPATH_FROM_ERROR_PATTERN = re.compile(
-    r"(?:-->\s*|\A\s*)(\S+?\.py)(?::\d+:\d+)?", re.MULTILINE
-)
+Rules:
+- One <EDIT> per atomic change
+- <SEARCH> must be EXACT verbatim copy-paste from MEMORY.md (every space, tab, blank line, exact indentation)
+- ALWAYS include 1-2 lines BEFORE and AFTER the changed section in <SEARCH>
+- <REPLACE> must keep THE EXACT SAME indentation level as the original
+- Module-level code (classes, functions) must start with ZERO leading spaces
+- Docstrings: imperative mood for the first line
+- The script will completely ignore your response if format is wrong."""
 
-# Stronger template — forces exact indentation and more context
-SYSTEM_PROMPT = """Fix ONLY the Ruff / mypy error(s) shown below in the file {filepath}
+# User prompt template (gets formatted with real file + error)
+USER_PROMPT_TEMPLATE = """Fix ONLY the Ruff / mypy error(s) shown below in the file {filepath}
 
 Respond **EXCLUSIVELY** with:
 - Zero or one <THOUGHT>single short sentence describing the rule being fixed</THOUGHT>
@@ -37,7 +43,8 @@ fixed lines keeping THE EXACT SAME indentation level
 CRITICAL RULES YOU MUST OBEY:
 - One <EDIT> block per atomic change
 - <SEARCH> must be EXACT copy-paste from the MEMORY.md file (every space, tab, blank line)
-- ALWAYS include 1-2 lines BEFORE and AFTER the changed line in <SEARCH> to preserve correct indentation
+- ALWAYS include 1-2 lines BEFORE and AFTER the changed line in <SEARCH>
+- Module-level code (classes, functions) must start with ZERO leading spaces in <SEARCH> and <REPLACE>
 - NEVER dedent, clean, or reformat the <SEARCH> block
 - Docstrings: imperative mood for the first line
 - NO text, NO markdown, NO lists, NO explanations, NO ```python outside the tags
@@ -124,8 +131,8 @@ def apply_edits(response_text, detected_filepath=None):
     for match in matches:
         found_any_edit_block = True
         filepath = match.group(1).strip()
-        search_text = match.group(2).strip("\n")  # keep original whitespace
-        replace_text = match.group(3).strip("\n")
+        search_text = match.group(2)  # keep exact whitespace
+        replace_text = match.group(3)
 
         if not os.path.exists(filepath):
             print(f"\n[SYSTEM] ❌ Error: Could not find file at {filepath}")
@@ -147,7 +154,7 @@ def apply_edits(response_text, detected_filepath=None):
                 )
                 print("   Likely indentation/context mismatch.")
                 print(
-                    f"   Provided <SEARCH> (first 300 chars):\n---\n{search_text[:300]}...\n---"
+                    f"   Provided <SEARCH> (first 400 chars):\n---\n{search_text[:400]}...\n---"
                 )
         except Exception as e:
             print(f"\n[SYSTEM] ❌ Failed to read/write {filepath}: {e}")
@@ -160,63 +167,26 @@ def apply_edits(response_text, detected_filepath=None):
             print(
                 "\n[SYSTEM] ❌ AI output plain code block(s) instead of <EDIT> format."
             )
-            print(
-                "   No changes applied. The model ignored the mandatory format."
-            )
+            print("   No changes applied.")
         else:
             print("\n[SYSTEM] ⚠️ No <EDIT> blocks found. No changes applied.")
-
-    python_blocks = re.findall(
-        r"```python\n(.*?)\n```", response_text, re.DOTALL
-    )
-    if (
-        not found_any_edit_block
-        and len(python_blocks) == 1
-        and "path=" not in response_text
-    ):
-        print(
-            "[SYSTEM] ⚠️ AI used plain code block. Treating as full file replacement (risky)."
-        )
-        for line in response_text.splitlines():
-            if line.strip().startswith("<EDIT path=") or "path=" in line:
-                break
-        else:
-            if detected_filepath:
-                print(f"    Applying to {detected_filepath} …")
-                try:
-                    with open(detected_filepath, "w", encoding="utf-8") as f:
-                        f.write(python_blocks[0].strip())
-                    print("[SYSTEM] ✅ Applied full replacement")
-                    return edits_made + 1
-                except Exception as e:
-                    print(f"[SYSTEM] Failed full replace: {e}")
 
     return edits_made
 
 
 def main():
     """Run script to edit files according to AI response."""
-    print(
-        f"🚀 Barebones Coder (Smart Linter Mode) Initialized (Model: {MODEL})"
-    )
-    print(
-        "Guided mode: enter file path → paste error → auto-builds perfect prompt.\n"
-    )
+    # === FRESH MEMORY ON EVERY RUN ===
+    if os.path.exists(MEMORY_FILE):
+        os.remove(MEMORY_FILE)
+        print("[SYSTEM] 🧹 Wiped MEMORY.md for a fresh session.")
 
-    initial_memory_content = load_memory(MEMORY_FILE)
+    print(f"🚀 Smart Coder Initialized (Model: {MODEL})")
+    print("Guided mode: file path → error → auto patch.\n")
+
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    if initial_memory_content:
-        print(f"[SYSTEM] 🧠 Loaded memory from '{MEMORY_FILE}' into context.")
-        messages.insert(
-            0,
-            {
-                "role": "system",
-                "content": f"Memory loaded:\n\n{initial_memory_content}",
-            },
-        )
-    else:
-        print(f"[SYSTEM] 🧠 No memory file '{MEMORY_FILE}' found or empty.")
+    print("[SYSTEM] 🧠 Fresh memory session started.")
 
     while True:
         try:
@@ -275,11 +245,10 @@ def main():
                 continue
 
             # Build full prompt
-            full_prompt = SYSTEM_PROMPT.format(
+            full_prompt = USER_PROMPT_TEMPLATE.format(
                 filepath=filepath, error_text=error_text
             )
 
-            # Reinforcement
             reinforcement = """CRITICAL INSTRUCTION — MUST FOLLOW EXACTLY:
 Your response must contain **ONLY** <THOUGHT>...</THOUGHT> (optional) and one or more <EDIT> blocks.
 NO explanatory text, NO markdown, NO ```python blocks, NO lists.

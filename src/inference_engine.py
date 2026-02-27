@@ -1,5 +1,4 @@
-# Axiom - inference_engine.py
-# Copyright (C) 2026 The Axiom Contributors
+"""Module containing the inference engine for the Axiom system."""
 
 import logging
 import sqlite3
@@ -15,7 +14,8 @@ DEFAULT_DB_PATH = "axiom_ledger.db"
 
 
 def _refine_streams_to_summary(grounded_facts, query_atoms):
-    """Neural refinement: use entity overlap and trust to produce one condensed summary.
+    """Produce one condensed summary.
+
     No LLM/transformers — uses Axiom's symbolic mesh (entities, structure).
     Picks the best anchor fact (most shared entities + highest trust) and delivers
     it as the canonical answer, with corroboration count.
@@ -38,9 +38,12 @@ def _refine_streams_to_summary(grounded_facts, query_atoms):
     all_entities = set()
     for s in fact_entities:
         all_entities |= s
-    shared = set(
-        e for e in all_entities if sum(1 for s in fact_entities if e in s) >= 2
-    )
+    shared = {
+        e
+        for e in all_entities
+        if any(e in s for s in fact_entities)
+        and sum(1 for s in fact_entities if e in s) >= 2
+    }
 
     # Anchor: fact with most shared-entity overlap, then highest trust
     def score(f, idx):
@@ -82,12 +85,11 @@ def think(
     max_extra_streams: int = 0,
     use_summary: bool = False,
 ):
-    """The Inference Pathway:
+    """Return dict with "response" (str) and "grounded_facts" (list) for show-more pagination.
+
     1. Shred user query into atoms.
     2. Find concept intersections in the Synapse Mesh.
     3. Retrieve the grounded facts that support the path.
-
-    Returns dict with "response" (str) and "grounded_facts" (list) for show-more pagination.
     If use_summary is True and multiple streams exist, response is a refined one-sentence summary.
     """
     if not NLP_MODEL:

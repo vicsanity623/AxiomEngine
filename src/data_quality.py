@@ -32,12 +32,16 @@ def _fingerprint(text: str) -> str:
 
 @dataclass
 class DuplicateGroup:
+    """Represent a group of duplicate facts identified by their fingerprint."""
+
     fingerprint: str
     fact_ids: list[str]
 
 
 @dataclass
 class ConflictGroup:
+    """Represent a group of conflicting facts identified by their subject, predicate, and object."""
+
     subject: str
     predicate: str
     objects: list[str]
@@ -77,9 +81,7 @@ def find_duplicate_candidates(
 
 
 def _parse_adl_triplet(text: str) -> tuple[str, str, str]:
-    """Very small helper for ADL-like 'subject|verb|object' strings.
-    Returns (subject, verb, object) or empty strings if parsing fails.
-    """
+    """Return (subject, verb, object) or empty strings if parsing fails."""
     parts = [p.strip() for p in text.split("|")]
     if len(parts) != 3:
         return "", "", ""
@@ -91,6 +93,7 @@ def find_conflict_candidates(
     sample_size: int = 500,
 ) -> list[ConflictGroup]:
     """Look for simple conflicts where the same subject+predicate pair appears with
+
     multiple distinct objects in ADL-style facts.
     """
     conn = sqlite3.connect(db_path)

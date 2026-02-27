@@ -1,5 +1,4 @@
-# Axiom - graph_export.py
-# Copyright (C) 2026 The Axiom Contributors
+"""Provide functions to export facts and relationships from a ledger database into JSON format for visualization."""
 
 import sqlite3
 import zlib
@@ -23,7 +22,7 @@ def _decompress_fact_content(raw):
 def load_facts_and_relationships(
     db_path: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Loads facts and relationships from the ledger. fact_content is decompressed to str for viz."""
+    """Load facts and relationships from the ledger, decompressing fact_content for visualization."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -50,7 +49,7 @@ def load_facts_and_relationships(
 def load_brain_synapses(
     db_path: str, min_strength=2
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """NEW: Fetches atoms and synapses for brain visualization."""
+    """Fetch atoms and synapses for brain visualization at a given minimum strength."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -65,14 +64,14 @@ def load_brain_synapses(
             (min_strength,),
         )
         synapses = [dict(row) for row in cur.fetchall()]
-    except:
+    except Exception:
         atoms, synapses = [], []
     conn.close()
     return atoms, synapses
 
 
 def to_json_for_viz(db_path: str, include_sources=True, topic_filter=None):
-    """Exports ledger facts and edges to JSON."""
+    """Export ledger facts and edges to JSON format for visualization."""
     facts, relationships = load_facts_and_relationships(db_path)
     if topic_filter:
         topic_lower = topic_filter.lower()
@@ -124,7 +123,7 @@ def to_json_for_viz(db_path: str, include_sources=True, topic_filter=None):
 
 
 def to_json_for_brain_viz(db_path: str):
-    """NEW: Formats the Lexical Mesh for PyVis."""
+    """Format the lexical mesh for visualization using PyVis."""
     atoms, synapses = load_brain_synapses(db_path)
     nodes = [
         {
