@@ -3,8 +3,10 @@
 Conduct light sanity checks, not full tests.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any
+from typing import TypedDict
 
 import requests
 
@@ -15,6 +17,15 @@ class SelfCheckCase:
 
     query: str
     must_contain: list[str]
+
+
+class SelfCheckResult(TypedDict, total=False):
+    """Represents the outcome of a single self-check query."""
+
+    query: str
+    ok: bool
+    missing_keywords: list[str]
+    error: str
 
 
 SELF_CHECKS: list[SelfCheckCase] = [
@@ -35,9 +46,10 @@ SELF_CHECKS: list[SelfCheckCase] = [
 
 def run_self_checks(
     base_url: str, timeout: float = 3.0
-) -> list[dict[str, Any]]:
+) -> list[SelfCheckResult]:
     """Run a small suite of self-queries against /think and report pass/fail."""
-    results: list[dict[str, Any]] = []
+    results: list[SelfCheckResult] = []
+
     for case in SELF_CHECKS:
         try:
             resp = requests.get(
@@ -46,12 +58,15 @@ def run_self_checks(
                 timeout=timeout,
             )
             resp.raise_for_status()
+
             data = resp.json()
             answer = str(data.get("response", "")).lower()
+
             missing = [
                 kw for kw in case.must_contain if kw.lower() not in answer
             ]
             ok = not missing
+
             results.append(
                 {
                     "query": case.query,
@@ -67,4 +82,5 @@ def run_self_checks(
                     "error": str(e),
                 }
             )
+
     return results

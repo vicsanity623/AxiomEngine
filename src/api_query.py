@@ -3,35 +3,69 @@
 # Copyright (C) 2026 The Axiom Contributors
 """
 
+from __future__ import annotations
+
 import logging
 import sqlite3
+import typing
 import zlib
-from typing import Any
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
-# DB_NAME removed. We rely on path argument.
+
+class FactResult(TypedDict):
+    """Represents a row from the 'facts' table."""
+
+    fact_id: str
+    fact_content: str
+    status: str
+    trust_score: int
+    source_url: str
+    ingest_timestamp_utc: str
+
+
+class LexiconAtom(TypedDict):
+    """Represents a row from the 'lexicon' table."""
+
+    word: str
+    pos_tag: str
+    occurrence_count: int
+
+
+class SynapseRelation(TypedDict):
+    """Represents a row from the 'synapses' table."""
+
+    word_a: str
+    word_b: str
+    relation_type: str
+    strength: int
+
+
+class LexicalMeshResult(TypedDict):
+    """Represents the structured result of a lexical mesh query."""
+
+    concept: str
+    properties: LexiconAtom | None
+    associations: list[SynapseRelation]
 
 
 def search_ledger_for_api(
     search_term: str,
     include_uncorroborated: bool = False,
     include_disputed: bool = False,
-    db_path: str | None = None,
-) -> list[dict[str, Any]]:
+    db_path: str = "axiom_ledger.db",
+) -> list[FactResult]:
     """Search the local SQLite ledger for facts containing the search term."""
     conn = None
-    if db_path is None:
-        db_path = "axiom_ledger.db"  # Fallback default path
 
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # We must select the content column explicitly in case it's a BLOB
         query = "SELECT fact_id, fact_content, status, trust_score, source_url, ingest_timestamp_utc FROM facts WHERE fact_content LIKE ?"
-        params = [f"%{search_term}%"]
+        params: list[str | int] = [f"%{search_term}%"]
         if not include_disputed:
             query += " AND status != 'disputed'"
         if not include_uncorroborated:
@@ -39,21 +73,18 @@ def search_ledger_for_api(
 
         cursor.execute(query, params)
 
-        results = []
+        results: list[FactResult] = []
         for row in cursor.fetchall():
             r = dict(row)
-            # --- DECOMPRESS THE CONTENT FOR SEARCHING/RETURNING ---
             try:
                 r["fact_content"] = zlib.decompress(r["fact_content"]).decode(
                     "utf-8"
                 )
-                results.append(r)
+                results.append(r)  # type: ignore[arg-type]
             except (TypeError, zlib.error):
                 logger.warning(
                     f"[API Query] Could not decompress fact {r['fact_id'][:8]}. Skipping or keeping compressed."
                 )
-                # If decompression fails, we skip it or return the raw blob depending on preference.
-                # For API calls, we should probably skip bad data.
                 continue
 
         return results
@@ -67,12 +98,10 @@ def search_ledger_for_api(
 
 
 def query_lexical_mesh(
-    search_term: str, db_path: str | None = None
-) -> dict[str, Any] | None:
+    search_term: str, db_path: str = "axiom_ledger.db"
+) -> LexicalMeshResult | None:
     """Navigate the synapses of Axiom's brain."""
     conn = None
-    if db_path is None:
-        db_path = "axiom_ledger.db"
 
     try:
         conn = sqlite3.connect(db_path)
@@ -80,7 +109,7 @@ def query_lexical_mesh(
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT * FROM lexicon WHERE word = ?",
+            "SELECT word, pos_tag, occurrence_count FROM lexicon WHERE word = ?",
             (search_term.lower(),),
         )
         atom = cursor.fetchone()
@@ -94,11 +123,19 @@ def query_lexical_mesh(
         """,
             (search_term.lower(), search_term.lower()),
         )
-        synapses = [dict(row) for row in cursor.fetchall()]
+
+        synapses: list[SynapseRelation] = [
+            typing.cast("SynapseRelation", dict(row))
+            for row in cursor.fetchall()
+        ]
+
+        properties: LexiconAtom | None = (
+            typing.cast("LexiconAtom", dict(atom)) if atom else None
+        )
 
         return {
             "concept": search_term,
-            "properties": dict(atom) if atom else None,
+            "properties": properties,
             "associations": synapses,
         }
     except Exception as e:
