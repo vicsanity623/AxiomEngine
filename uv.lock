@@ -49,9 +49,10 @@ wheels = [
 
 [[package]]
 name = "axiom-engine"
-version = "0.2.1"
+version = "0.2.2b1"
 source = { editable = "." }
 dependencies = [
+    { name = "attrs" },
     { name = "beautifulsoup4" },
     { name = "feedparser" },
     { name = "flask" },
@@ -79,6 +80,7 @@ tools = [
 
 [package.metadata]
 requires-dist = [
+    { name = "attrs", specifier = "==25.4.0" },
     { name = "attrs", marker = "extra == 'tools'", specifier = ">=24.0.0" },
     { name = "beautifulsoup4", specifier = ">=4.12.3" },
     { name = "feedparser", specifier = ">=6.0.11" },

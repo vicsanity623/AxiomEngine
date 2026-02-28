@@ -1,4 +1,5 @@
 """Auto Scan & Fix - Unified Orchestrator for Ruff and Mypy"""
+# use this script with caution!
 
 import argparse
 import ast
