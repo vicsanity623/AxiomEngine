@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_PATH = "axiom_ledger.db"
 
 
-def _domain_from_url(url):
+def _domain_from_url(url: str) -> str:
     """Extract the base domain (e.g., 'bbc.com') to prevent gaming the system with multiple links from one site."""
     try:
         parsed = urlparse(url)
@@ -26,7 +26,7 @@ def _domain_from_url(url):
         return "unknown"
 
 
-def initialize_database(db_path: str = DEFAULT_DB_PATH):
+def initialize_database(db_path: str = DEFAULT_DB_PATH) -> None:
     """Create the 'facts' table and the 'fact_relationships' table if they don't exist."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -201,15 +201,15 @@ def get_all_facts_for_analysis(
 
 
 def insert_uncorroborated_fact(
-    fact_id,
-    fact_content,
-    source_url,
-    adl_summary="",
+    fact_id: Any,
+    fact_content: str,
+    source_url: str,
+    adl_summary: str = "",
     fragment_state: str = "unknown",
     fragment_score: float = 0.0,
     fragment_reason: str | None = None,
     db_path: str = DEFAULT_DB_PATH,
-):
+) -> dict[str, Any] | None:
     """Insert and update facts status as uncorroborated facts."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -256,11 +256,11 @@ def insert_uncorroborated_fact(
 
 
 def find_similar_fact_from_different_domain(
-    fact_content,
-    source_domain,
-    all_facts,
+    fact_content: str,
+    source_domain: str,
+    all_facts: list[dict[str, Any]],
     db_path: str = DEFAULT_DB_PATH,
-):
+) -> Any:
     """Find similar content from different domains."""
     content_start = fact_content[:60].lower()
     source_domain = source_domain.lower()
@@ -283,8 +283,8 @@ def find_similar_fact_from_different_domain(
 
 
 def update_fact_corroboration(
-    fact_id, new_source_url, db_path: str = DEFAULT_DB_PATH
-):
+    fact_id: int, new_source_url: str, db_path: str = DEFAULT_DB_PATH
+) -> None:
     """Update fact status for corroborating_sources."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -326,12 +326,12 @@ def update_fact_corroboration(
 
 
 def mark_facts_as_disputed(
-    original_fact_id,
-    new_fact_id,
-    new_fact_content,
-    new_source_url,
+    original_fact_id: Any,
+    new_fact_id: Any,
+    new_fact_content: Any,
+    new_source_url: Any,
     db_path: str = DEFAULT_DB_PATH,
-):
+) -> None:
     """Dispute facts when they occur and update the status."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -366,8 +366,11 @@ def mark_facts_as_disputed(
 
 
 def insert_relationship(
-    fact_id_1, fact_id_2, weight, db_path: str = DEFAULT_DB_PATH
-):
+    fact_id_1: int,
+    fact_id_2: int,
+    weight: float,
+    db_path: str = DEFAULT_DB_PATH,
+) -> None:
     """Create relationships between facts."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -388,7 +391,7 @@ def insert_relationship(
 
 def get_unprocessed_facts_for_lexicon(
     db_path: str = DEFAULT_DB_PATH,
-):
+) -> list[dict[str, Any]]:
     """Fetch facts that the brain hasn't learned from yet."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -401,7 +404,9 @@ def get_unprocessed_facts_for_lexicon(
     return rows
 
 
-def mark_fact_as_processed(fact_id, db_path: str = DEFAULT_DB_PATH):
+def mark_fact_as_processed(
+    fact_id: int, db_path: str = DEFAULT_DB_PATH
+) -> None:
     """Update Fact status as processed."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -413,7 +418,9 @@ def mark_fact_as_processed(fact_id, db_path: str = DEFAULT_DB_PATH):
     conn.close()
 
 
-def update_lexical_atom(word, pos, db_path: str = DEFAULT_DB_PATH):
+def update_lexical_atom(
+    word: str, pos: str, db_path: str = DEFAULT_DB_PATH
+) -> None:
     """Update the lexical values."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -429,7 +436,9 @@ def update_lexical_atom(word, pos, db_path: str = DEFAULT_DB_PATH):
     conn.close()
 
 
-def update_synapse(word_a, word_b, relation, db_path: str = DEFAULT_DB_PATH):
+def update_synapse(
+    word_a: str, word_b: str, relation: str, db_path: str = DEFAULT_DB_PATH
+) -> None:
     """Update synapses values."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()

@@ -3,6 +3,7 @@
 import logging
 import sqlite3
 import zlib
+from typing import Any
 
 from src.axiom_model_loader import load_nlp_model
 from src.synthesizer import get_weighted_entities
@@ -13,7 +14,9 @@ NLP_MODEL = load_nlp_model()
 DEFAULT_DB_PATH = "axiom_ledger.db"
 
 
-def _refine_streams_to_summary(grounded_facts, query_atoms):
+def _refine_streams_to_summary(
+    grounded_facts: list[dict[str, Any]], query_atoms: list[str]
+) -> str | None:
     """Produce one condensed summary.
 
     No LLM/transformers — uses Axiom's symbolic mesh (entities, structure).
@@ -46,7 +49,7 @@ def _refine_streams_to_summary(grounded_facts, query_atoms):
     }
 
     # Anchor: fact with most shared-entity overlap, then highest trust
-    def score(f, idx):
+    def score(f: dict[str, Any], idx: int) -> tuple[int, float | int]:
         overlap = (
             len(fact_entities[idx] & shared) if idx < len(fact_entities) else 0
         )
@@ -80,11 +83,11 @@ def _refine_streams_to_summary(grounded_facts, query_atoms):
 
 
 def think(
-    user_query,
+    user_query: str,
     db_path: str | None = None,
     max_extra_streams: int = 0,
     use_summary: bool = False,
-):
+) -> dict[str, Any]:
     """Return dict with "response" (str) and "grounded_facts" (list) for show-more pagination.
 
     1. Shred user query into atoms.

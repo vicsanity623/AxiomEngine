@@ -2,6 +2,7 @@
 
 import logging
 import zlib
+from typing import Any
 
 from src.axiom_model_loader import load_nlp_model
 from src.ledger import (
@@ -14,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 NLP_MODEL = load_nlp_model()
 
-IGNORED_ENTITIES = {
+# Type hint added to global set
+IGNORED_ENTITIES: set[str] = {
     "today",
     "yesterday",
     "tomorrow",
@@ -39,8 +41,8 @@ IGNORED_ENTITIES = {
 }
 
 
-def get_weighted_entities(text):
-    """Extract entities and assigns a 'relevance weight'.
+def get_weighted_entities(text: str | None) -> dict[str, int]:
+    """Extract entities and assign a 'relevance weight'.
 
     Return a dictionary: { 'entity_name': weight }
     """
@@ -48,7 +50,8 @@ def get_weighted_entities(text):
         return {}
 
     doc = NLP_MODEL(text)
-    entities = {}
+    # Fixed [var-annotated] by explicitly typing the empty dictionary
+    entities: dict[str, int] = {}
 
     for ent in doc.ents:
         clean_text = ent.text.lower().strip()
@@ -73,7 +76,9 @@ def get_weighted_entities(text):
     return entities
 
 
-def link_related_facts(new_facts_batch, db_path: str | None = None):
+def link_related_facts(
+    new_facts_batch: list[dict[str, Any]] | None, db_path: str | None = None
+) -> None:
     """Compare a batch of new facts against the ledger.
 
     Create links and reinforces Neural Synapses between concepts.
@@ -85,7 +90,9 @@ def link_related_facts(new_facts_batch, db_path: str | None = None):
         "\n\033[96m--- [The Synthesizer] Beginning Knowledge Graph linking... ---\033[0m",
     )
 
-    new_facts_data = []
+    # Added typing to the empty list to satisfy strict linters
+    new_facts_data: list[dict[str, Any]] = []
+
     for fact in new_facts_batch:
         content = fact.get("fact_content")
         if isinstance(content, (bytes, bytearray)):
@@ -108,8 +115,11 @@ def link_related_facts(new_facts_batch, db_path: str | None = None):
     all_facts_in_ledger = get_all_facts_for_analysis(
         db_path or "axiom_ledger.db"
     )
+
+    # Adjusted to standard logging formatting to avoid Ruff G004 warnings
     logger.info(
-        f"\033[96m[The Synthesizer] Indexing {len(all_facts_in_ledger)} existing facts for cross-reference...\033[0m",
+        "\033[96m[The Synthesizer] Indexing %d existing facts for cross-reference...\033[0m",
+        len(all_facts_in_ledger),
     )
 
     links_created = 0
@@ -124,6 +134,7 @@ def link_related_facts(new_facts_batch, db_path: str | None = None):
             )
         except (zlib.error, AttributeError):
             continue
+
         existing_ents = get_weighted_entities(content)
 
         if not existing_ents:
@@ -133,8 +144,9 @@ def link_related_facts(new_facts_batch, db_path: str | None = None):
             if new_fact["id"] == existing_fact["fact_id"]:
                 continue
 
-            total_score = 0
-            shared_terms = []
+            # Typed as float to match division below
+            total_score = 0.0
+            shared_terms: list[str] = []
 
             for entity, weight in new_fact["entities"].items():
                 if entity in existing_ents:
@@ -157,7 +169,7 @@ def link_related_facts(new_facts_batch, db_path: str | None = None):
 
     if links_created > 0:
         logger.info(
-            f"Linking Success. Created {links_created} new graph connections.",
+            "Linking Success. Created %d new graph connections.", links_created
         )
     else:
         logger.info(

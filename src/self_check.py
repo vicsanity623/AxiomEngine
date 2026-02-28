@@ -4,6 +4,7 @@ Conduct light sanity checks, not full tests.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 import requests
 
@@ -32,9 +33,11 @@ SELF_CHECKS: list[SelfCheckCase] = [
 ]
 
 
-def run_self_checks(base_url: str, timeout: float = 3.0) -> list[dict]:
+def run_self_checks(
+    base_url: str, timeout: float = 3.0
+) -> list[dict[str, Any]]:
     """Run a small suite of self-queries against /think and report pass/fail."""
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
     for case in SELF_CHECKS:
         try:
             resp = requests.get(

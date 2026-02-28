@@ -103,10 +103,10 @@ def get_chain_head(
 ) -> tuple[str, int] | None:
     """Return (block_id, height) of the current chain tip, or None if no chain."""
     own_conn = conn is None
-    if db_path is None and conn is None:
-        db_path = "axiom_ledger.db"
-
-    conn = conn or sqlite3.connect(db_path)
+    if conn is None:
+        if db_path is None:
+            db_path = "axiom_ledger.db"
+        conn = sqlite3.connect(db_path)
     try:
         ensure_genesis(conn)
         cursor = conn.cursor()
@@ -133,10 +133,10 @@ def create_block(
     to commit in this block. Returns the new block dict or None if creation failed.
     """
     own_conn = conn is None
-    if db_path is None and conn is None:
-        db_path = "axiom_ledger.db"
-
-    conn = conn or sqlite3.connect(db_path)
+    if conn is None:
+        if db_path is None:
+            db_path = "axiom_ledger.db"
+        conn = sqlite3.connect(db_path)
     try:
         ensure_genesis(conn)
         head = get_chain_head(
@@ -214,12 +214,13 @@ def append_block(
 ) -> bool:
     """Append a validated block to the chain. Caller must ensure it extends current head."""
     own_conn = conn is None
-    if db_path is None and conn is None:
-        db_path = "axiom_ledger.db"
+    if conn is None:
+        if db_path is None:
+            db_path = "axiom_ledger.db"
+        conn = sqlite3.connect(db_path)
 
     block = _normalize_block_from_wire(block)
 
-    conn = conn or sqlite3.connect(db_path)
     try:
         ensure_genesis(conn)
         head = get_chain_head(
@@ -294,10 +295,10 @@ def get_blocks_after(
 ) -> list[dict[str, Any]]:
     """Return blocks with height > height, ordered by height ascending."""
     own_conn = conn is None
-    if db_path is None and conn is None:
-        db_path = "axiom_ledger.db"
-
-    conn = conn or sqlite3.connect(db_path)
+    if conn is None:
+        if db_path is None:
+            db_path = "axiom_ledger.db"
+        conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -418,10 +419,10 @@ def get_block_by_id(
 ) -> dict[str, Any] | None:
     """Fetch a single block by id."""
     own_conn = conn is None
-    if db_path is None and conn is None:
-        db_path = "axiom_ledger.db"
-
-    conn = conn or sqlite3.connect(db_path)
+    if conn is None:
+        if db_path is None:
+            db_path = "axiom_ledger.db"
+        conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
         cursor.execute(

@@ -2,6 +2,7 @@
 
 import logging
 from collections import Counter
+from typing import Any
 
 import feedparser
 
@@ -10,7 +11,7 @@ from src.axiom_model_loader import load_nlp_model
 logger = logging.getLogger(__name__)
 
 
-NLP_MODEL = load_nlp_model()
+NLP_MODEL: Any = load_nlp_model()
 
 RSS_FEEDS = [
     "http://feeds.bbci.co.uk/news/rss.xml",
@@ -73,12 +74,12 @@ IGNORED_ENTITIES = {
 }
 
 
-def get_trending_topics(top_n=100):
+def get_trending_topics(top_n: int = 100) -> list[str]:
     """Identify trending topics using Named Entity Recognition (NER) on RSS headlines.
 
     Filter out noise to find substantial subjects.
     """
-    all_entities = []
+    all_entities: list[str] = []
 
     default_watch_list = [
         "Artificial Intelligence",
@@ -129,7 +130,10 @@ def get_trending_topics(top_n=100):
                     all_entities.append(text)
 
         except Exception as e:
-            logger.debug(f"[Zeitgeist] Failed to process feed {feed_url}: {e}")
+            # Using %s instead of f-strings in logging satisfies Ruff's G004 rule.
+            logger.debug(
+                "[Zeitgeist] Failed to process feed %s: %s", feed_url, e
+            )
             continue
 
     if not all_entities:
@@ -145,7 +149,7 @@ def get_trending_topics(top_n=100):
     final_topics = [t[0] for t in common]
 
     seen = set()
-    unique_topics = []
+    unique_topics: list[str] = []
     for t in final_topics:
         if t.lower() not in seen:
             unique_topics.append(t)
@@ -163,5 +167,6 @@ def get_trending_topics(top_n=100):
                 if len(result) >= top_n:
                     break
 
-    logger.info(f"Top topics created: {result}\033[0m")
+    # Using %s instead of f-strings in logging satisfies Ruff's G004 rule.
+    logger.info("Top topics created: %s\033[0m", result)
     return result

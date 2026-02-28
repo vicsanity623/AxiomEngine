@@ -17,12 +17,12 @@ WHITE = "\033[97m"
 
 
 class AxiomFormatter(logging.Formatter):
-    """Handle specific color rules based on message content,
+    """Handle specific color rules based on message content.
 
-    Using a custom formatter.
+    This uses a custom formatter to assign colors and icons.
     """
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         """Format the log message with a timestamp and appropriate icon."""
         timestamp = datetime.fromtimestamp(record.created).strftime(
             "%I:%M:%S%p",
@@ -69,7 +69,7 @@ class AxiomFormatter(logging.Formatter):
         return f"{formatted_time} {formatted_msg}"
 
 
-def setup_logger():
+def setup_logger() -> None:
     """Configure the root logger to use our custom formatter."""
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)

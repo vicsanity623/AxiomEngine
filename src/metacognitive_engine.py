@@ -105,7 +105,7 @@ def prune_integrity_check(db_path: str) -> None:
 
 # --- Future Goal: ADL-Driven Inference ---
 # This function would be used once ADL is fully trusted over raw text.
-def retrieve_adl_based_answer(query_atoms: list) -> None:
+def retrieve_adl_based_answer(query_atoms: list[str]) -> None:
     """Query the Synapses table using ADL hashes
 
     instead of full text search on the facts table as placeholder.

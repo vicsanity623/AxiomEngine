@@ -13,6 +13,7 @@ import hashlib
 import logging
 import re
 import zlib
+from typing import Any
 
 from src.axiom_model_loader import load_nlp_model
 from src.ledger import (
@@ -66,7 +67,7 @@ SUBJECTIVITY_INDICATORS = {
 }
 
 
-def _generate_adl_summary(doc):
+def _generate_adl_summary(doc: Any) -> str:
     """Generate a compact, deterministic representation of the sentence structure (ADL).
 
     Format: [Subject_ROOT_Verb(Lemma)_Entities_Hash]
@@ -93,7 +94,7 @@ def _generate_adl_summary(doc):
     return f"{subject}|{root_verb}|{'_'.join(entities)}"
 
 
-def integrate_fact_to_mesh(fact_content):
+def integrate_fact_to_mesh(fact_content: str) -> bool:
     """Deconstruct a verified fact into its linguistic atoms and synapses.
 
     Axiom 'learns' language structure from the facts it gathers.
@@ -121,7 +122,7 @@ def integrate_fact_to_mesh(fact_content):
     return True
 
 
-def _sanitize_text(text):
+def _sanitize_text(text: str | bytes | None) -> str:
     """Clean up text before NLP processing."""
     if not text:
         return ""
@@ -136,7 +137,7 @@ def _sanitize_text(text):
     )
 
 
-def _is_valid_grammatical_sentence(doc):
+def _is_valid_grammatical_sentence(doc: Any) -> bool:
     """Ensure the text is a complete sentence, not a fragment.
 
     Must have a Subject (nsubj) and a Root Verb.
@@ -149,7 +150,7 @@ def _is_valid_grammatical_sentence(doc):
     return not (not has_subject or not has_verb)
 
 
-def _count_named_entities(doc):
+def _count_named_entities(doc: Any) -> int:
     """Count distinct named entities (ORG, PERSON, GPE, etc.) in the doc."""
     valid_labels = {"ORG", "PERSON", "GPE", "EVENT", "LAW", "LOC"}
     seen = set()
@@ -159,12 +160,14 @@ def _count_named_entities(doc):
     return len(seen)
 
 
-def _contains_named_entity(doc):
+def _contains_named_entity(doc: Any) -> bool:
     """Reject and or Accept a fact."""
     return _count_named_entities(doc) >= 1
 
 
-def _compute_fragment_metadata(doc, raw_sent: str):
+def _compute_fragment_metadata(
+    doc: Any, raw_sent: str
+) -> tuple[float, str, str]:
     """Heuristic fragment scoring with NO model calls beyond the provided doc.
 
     This is intentionally simple and deterministic:
@@ -223,7 +226,9 @@ def _compute_fragment_metadata(doc, raw_sent: str):
     return score, state, reason
 
 
-def _check_for_contradiction(new_doc, all_existing_facts):
+def _check_for_contradiction(
+    new_doc: Any, all_existing_facts: list[dict[str, Any]]
+) -> dict[str, Any] | None:
     """Scan the ledger for direct contradictions.
 
     Logic: Same Subject + Same Verb + One is Negated ('not') vs One is Positive.
@@ -279,7 +284,9 @@ def _check_for_contradiction(new_doc, all_existing_facts):
     return None  # Added explicit return statement
 
 
-def extract_facts_from_text(source_url, text_content):
+def extract_facts_from_text(
+    source_url: str, text_content: str | bytes | None
+) -> list[Any]:
     """Analyze and process text content to extract facts.
 
     1. Sanitize
@@ -334,7 +341,9 @@ def extract_facts_from_text(source_url, text_content):
             contradictions += 1
             continue
 
-        domain = re.search(r"https?://(?:www\.)?([^/]+)", source_url).group(1)
+        domain_match = re.search(r"https?://(?:www\.)?([^/]+)", source_url)
+        domain = domain_match.group(1) if domain_match else "unknown_domain"
+
         similar_fact = find_similar_fact_from_different_domain(
             raw_sent,
             domain,

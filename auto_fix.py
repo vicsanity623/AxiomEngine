@@ -57,7 +57,7 @@ fixed raw code (same indentation, no fences)
 """
 
 
-def parse_args() -> None:
+def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Auto Scan & Fix")
     parser.add_argument("--exclude", "-e", action="append", default=[])
@@ -72,10 +72,10 @@ def find_containing_function(filepath: str, target_line: int) -> str:
         tree = ast.parse(source, filename=filepath)
 
         class FunctionFinder(ast.NodeVisitor):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.function_source = ""
 
-            def visit_FunctionDef(self, node):
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
                 end = getattr(node, "end_lineno", node.lineno + 80)
                 if node.lineno <= target_line <= end:
                     lines = source.splitlines(keepends=True)
@@ -85,8 +85,10 @@ def find_containing_function(filepath: str, target_line: int) -> str:
                     return
                 self.generic_visit(node)
 
-            def visit_AsyncFunctionDef(self, node):
-                self.visit_FunctionDef(node)
+            def visit_AsyncFunctionDef(
+                self, node: ast.AsyncFunctionDef
+            ) -> None:
+                self.visit_FunctionDef(node)  # type: ignore
 
         finder = FunctionFinder()
         finder.visit(tree)
@@ -174,14 +176,18 @@ def update_memory_file(
         return False
 
 
-def flexible_replace(content: str, search_text: str, replace_text: str):
+def flexible_replace(
+    content: str, search_text: str, replace_text: str
+) -> str | None:
     """Replace content of lines with accuracy."""
     if search_text in content:
         return content.replace(search_text, replace_text, 1)
     return None
 
 
-def apply_edits(response_text, detected_filepath=None):
+def apply_edits(
+    response_text: str, detected_filepath: str | None = None
+) -> tuple[int, dict[str, str]]:
     """Apply edits to the file path related to the error."""
     pattern = re.compile(
         r'<EDIT path="(.*?)">.*?<SEARCH>(.*?)</SEARCH>.*?<REPLACE>(.*?)</REPLACE>',
@@ -189,7 +195,7 @@ def apply_edits(response_text, detected_filepath=None):
     )
     matches = pattern.finditer(response_text)
     edits_made = 0
-    backups = {}
+    backups: dict[str, str] = {}
     for m in matches:
         filepath = m.group(1).strip()
         search_t = m.group(2)
@@ -238,21 +244,31 @@ def run_ruff_checks(excludes: list[str] | None = None) -> bool:
         return False
 
 
-def get_next_mypy_error(excludes: list[str] | None = None):
-    """Run Mypy check, ignore excluded files/dirs, and return ONLY the FIRST error line."""
+def get_next_mypy_error(
+    excludes: list[str] | None = None,
+) -> tuple[str | None, str | None, int]:
+    """Run Mypy check, ignore excluded files/dirs, return FIRST error line and total error count."""
     print("[SYSTEM] 🔍 Running 'mypy' checks ...")
     cmd = [sys.executable, "-m", "mypy", "src"]
     for e in excludes or []:
         cmd += ["--exclude", str(os.path.abspath(e))]
     r = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
     if r.returncode == 0:
-        return None, None
+        return None, None, 0
     out = (r.stdout or "").strip()
     if not out:
-        return None, None
-    first_error_line = out.splitlines()[0].strip()
+        return None, None, 0
+
+    lines = out.splitlines()
+    error_lines = [line for line in lines if " error: " in line]
+    total_errors = len(error_lines) if error_lines else 1
+
+    first_error_line = (
+        error_lines[0].strip() if error_lines else lines[0].strip()
+    )
     filepath = first_error_line.split(":")[0].strip()
-    return filepath, first_error_line
+
+    return filepath, first_error_line, total_errors
 
 
 def load_memory(p: str) -> str | None:
@@ -266,15 +282,17 @@ def load_memory(p: str) -> str | None:
         return None
 
 
-def main():
+def main() -> None:
     """Unified Orchestrator: Auto-Runs smart_coder.py, then handles Mypy with safety reverts."""
     args = parse_args()
     excludes = args.exclude
     print(f"🚀 Auto Scan & Fix Initialized (Model: {MODEL})")
     print("Workflow: ...")
 
-    consecutive_failures = 0
-    last_error_text = ""
+    consecutive_no_edits = 0
+    consecutive_no_progress = 0
+    last_total_errors = -1
+    last_error_sig = ""
 
     while True:
         try:
@@ -290,21 +308,10 @@ def main():
                 print("[SYSTEM] ❌ Ruff failed")
                 break
 
-            filepath, error_text = get_next_mypy_error(excludes)
+            filepath, error_text, total_errors = get_next_mypy_error(excludes)
             if not filepath or not error_text:
                 print("\n🎉 [SYSTEM] ALL CLEAR!")
                 break
-
-            if error_text == last_error_text:
-                consecutive_failures += 1
-            else:
-                consecutive_failures = 0
-                last_error_text = error_text
-
-            if consecutive_failures >= 3:
-                break
-
-            print(f"[SYSTEM] Found Mypy Error:\n> {error_text}\n")
 
             (
                 top_imports,
@@ -312,6 +319,40 @@ def main():
                 surrounding_context,
                 target_line_text,
             ) = extract_snippet(filepath, error_text)
+
+            # Robust Loop Detection Signature
+            core_msg = (
+                error_text.split(" error: ")[-1].strip()
+                if " error: " in error_text
+                else error_text
+            )
+            error_sig = f"{filepath} | {core_msg} | {target_line_text.strip()}"
+
+            # Check if total errors stayed the same (or went up) AND it's identical signature
+            if last_total_errors != -1 and total_errors >= last_total_errors:
+                if error_sig == last_error_sig:
+                    consecutive_no_progress += 1
+                else:
+                    consecutive_no_progress = 0
+            else:
+                consecutive_no_progress = 0
+
+            last_total_errors = total_errors
+            last_error_sig = error_sig
+
+            if consecutive_no_progress >= 3:
+                print(
+                    "\n[SYSTEM] 🛑 CRITICAL: Stuck in a loop. Error count is not decreasing."
+                )
+                print(f"[SYSTEM] 🛑 Signature: {error_sig}")
+                print(
+                    "[SYSTEM] Aborting to prevent infinite loop. Please fix manually."
+                )
+                break
+
+            print(
+                f"[SYSTEM] Found Mypy Error ({total_errors} errors remaining):\n> {error_text}\n"
+            )
 
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -361,7 +402,15 @@ def main():
 
             edits_made, backups = apply_edits(response_text, filepath)
 
-            if edits_made > 0:
+            if edits_made == 0:
+                consecutive_no_edits += 1
+                if consecutive_no_edits >= 3:
+                    print(
+                        "\n[SYSTEM] 🛑 LLM failed to make valid edits 3 times in a row. Aborting."
+                    )
+                    break
+            else:
+                consecutive_no_edits = 0
                 print("\n[SYSTEM] Verifying...")
                 if not run_ruff_checks(excludes):
                     print("[SYSTEM] Reverting bad edit...")
@@ -370,16 +419,18 @@ def main():
                             f.write(c)
                 else:
                     print("[SYSTEM] ✅ Good fix")
-                    time.sleep(3)
-            else:
-                time.sleep(2)
+
+            # Consistent cooldown applied to ALL edit attempts (failed, reverted, or successful)
+            print("\n[SYSTEM] ⏳ Waiting 2 minutes to give CPU a break...")
+            time.sleep(120)
 
         except KeyboardInterrupt:
             print("\n[SYSTEM] Interrupted by user.")
             break
         except Exception as e:
             print(f"[ERROR] {e}")
-            time.sleep(2)
+            print("\n[SYSTEM] ⏳ Waiting 60 seconds to give CPU a break...")
+            time.sleep(60)
 
 
 if __name__ == "__main__":

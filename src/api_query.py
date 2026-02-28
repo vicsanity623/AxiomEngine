@@ -6,6 +6,7 @@
 import logging
 import sqlite3
 import zlib
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -13,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 def search_ledger_for_api(
-    search_term,
-    include_uncorroborated=False,
-    include_disputed=False,
+    search_term: str,
+    include_uncorroborated: bool = False,
+    include_disputed: bool = False,
     db_path: str | None = None,
-):
+) -> list[dict[str, Any]]:
     """Search the local SQLite ledger for facts containing the search term."""
     conn = None
     if db_path is None:
@@ -65,7 +66,9 @@ def search_ledger_for_api(
             conn.close()
 
 
-def query_lexical_mesh(search_term, db_path: str | None = None):
+def query_lexical_mesh(
+    search_term: str, db_path: str | None = None
+) -> dict[str, Any] | None:
     """Navigate the synapses of Axiom's brain."""
     conn = None
     if db_path is None:

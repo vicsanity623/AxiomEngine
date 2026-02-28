@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Any
 
 import feedparser
 import requests
@@ -30,7 +31,7 @@ class ContentSanitizer:
     """Define the class for cleanup."""
 
     @staticmethod
-    def is_valid_sentence(text):
+    def is_valid_sentence(text: str) -> bool:
         """Check the sentence structure."""
         text = text.strip()
         if len(text) < 45 or len(text) > 500:
@@ -48,7 +49,7 @@ class ContentSanitizer:
         return not (text[0].isupper() and text[-1] in '.!?"')
 
     @staticmethod
-    def clean_text_block(raw_text, topic):
+    def clean_text_block(raw_text: str | None, topic: str) -> str:
         """Clean the block of text for sentence cleanup."""
         if not raw_text:
             return ""
@@ -70,7 +71,7 @@ class ContentSanitizer:
         return "\n\n".join(clean_paragraphs)
 
 
-def _manual_bs4_extraction(html):
+def _manual_bs4_extraction(html: str) -> str:
     """Fallback to the extractor using BeautifulSoup.
 
     Use if Trafilatura fails (common in standalone builds).
@@ -83,11 +84,14 @@ def _manual_bs4_extraction(html):
     return "\n".join(paragraphs)
 
 
-def _fetch_article_text(url, timeout=12):
+def _fetch_article_text(url: str, timeout: int = 12) -> str | None:
     """Fetch article text with a robust fallback for standalone builds."""
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            ),
             "Referer": "https://www.google.com/",
         }
 
@@ -109,23 +113,25 @@ def _fetch_article_text(url, timeout=12):
             if text and len(text) > 200:
                 return text
         except Exception as e:
-            logger.debug(f"Trafilatura failed in standalone mode: {e}")
+            logger.debug("Trafilatura failed in standalone mode: %s", e)
 
         return _manual_bs4_extraction(html_content)
 
     except Exception as e:
-        logger.debug(f"Fetch failed for {url}: {e}")
+        logger.debug("Fetch failed for %s: %s", url, e)
         return None
 
 
-def find_and_extract(topic, max_sources=3):
+def find_and_extract(topic: str, max_sources: int = 3) -> list[dict[str, Any]]:
     """Navigate source feed to identify extract points."""
     logger.info(
-        f"\033[2m--- [Pathfinder] Seeking sources for '{topic}'... ---\033[0m",
+        "\033[2m--- [Pathfinder] Seeking sources for '%s'... ---\033[0m",
+        topic,
     )
 
-    extracted_content = []
-    seen_urls = set()
+    # Added typing here so Mypy knows what goes into this empty list
+    extracted_content: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
     topic_keywords = set(topic.lower().split())
 
     for feed_url in RSS_SOURCES:
@@ -167,9 +173,10 @@ def find_and_extract(topic, max_sources=3):
                         )
                         if relevant_text and len(relevant_text) > 100:
                             logger.info(
-                                f"\033[92m  -> Matched + Verified: {link[:60]}...\033[0m",
+                                "\033[92m  -> Matched + Verified: %s...\033[0m",
+                                link[:60],
                             )
-                            data = {
+                            data: dict[str, Any] = {
                                 "source_url": link,
                                 "content": relevant_text,
                             }
@@ -185,7 +192,8 @@ def find_and_extract(topic, max_sources=3):
                         ).get_text()
                         if ContentSanitizer.is_valid_sentence(clean_summary):
                             logger.info(
-                                f"\033[92m  -> Matched (RSS Summary): {link[:60]}...\033[0m",
+                                "\033[92m  -> Matched (RSS Summary): %s...\033[0m",
+                                link[:60],
                             )
                             data = {
                                 "source_url": link,
@@ -196,8 +204,8 @@ def find_and_extract(topic, max_sources=3):
                             extracted_content.append(data)
 
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            logger.error("An error occurred: %s", e)
             continue
 
-    logger.info(f"Success. Found {len(extracted_content)} valid sources.")
+    logger.info("Success. Found %d valid sources.", len(extracted_content))
     return extracted_content

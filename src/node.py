@@ -1,5 +1,7 @@
 """Run the main node."""
 
+from __future__ import annotations
+
 import logging
 import math
 import os
@@ -10,9 +12,10 @@ import time
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 import requests
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 # --- IMPORT AXIOM MODULES ---
@@ -47,15 +50,18 @@ from src.p2p import sync_chain_with_peer, sync_with_peer
 from src.self_check import run_self_checks
 from src.system_health import compute_health_snapshot
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
 setup_logger()
 logger = logging.getLogger("node")
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True, resources={r"/*": {"origins": "*"}})
-node_instance = None
 
 
-def print_banner():
+def print_banner() -> None:
     """Print the banner for Axiom - Engine."""
     c = "\033[96m"
     r = "\033[0m"
@@ -75,7 +81,7 @@ def print_banner():
     print(r)
 
 
-def _normalize_bootstrap_peer(raw_value, self_port):
+def _normalize_bootstrap_peer(raw_value: Any, self_port: int) -> str | None:
     if not raw_value or not str(raw_value).strip():
         return None
     raw = str(raw_value).strip()
@@ -91,29 +97,34 @@ def _normalize_bootstrap_peer(raw_value, self_port):
 class AxiomNode:
     """Represent an Axiom Node with networking and peer management capabilities."""
 
-    def __init__(self, host="127.0.0.1", port=8009, bootstrap_peer=None):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8009,
+        bootstrap_peer: str | None = None,
+    ) -> None:
         """Initialize the AxiomNode with the given host, port, and optional bootstrap peer.
 
         :param host: The network interface to bind the node to.
         :param port: The TCP port on which the node will listen for connections.
         :param bootstrap_peer: An optional URL of a peer to connect to initially.
         """
-        self.host = host
-        self.port = port
-        self.self_url = f"http://{self.host}:{port}"
+        self.host: str = host
+        self.port: int = port
+        self.self_url: str = f"http://{self.host}:{port}"
 
         if port == 8009:
-            self.advertised_url = (
+            self.advertised_url: str = (
                 os.environ.get("ADVERTISED_URL")
                 or "https://vics-imac-1.tail137b4f2.ts.net"
             )
         else:
             self.advertised_url = f"http://127.0.0.1:{port}"
 
-        self.peers = {}
+        self.peers: dict[str, dict[str, Any]] = {}
 
-        self._topic_rotation_index = secrets.choice(range(11))
-        self._last_mesh_print = 0
+        self._topic_rotation_index: int = secrets.choice(range(11))
+        self._last_mesh_print: float = 0.0
 
         seed_nodes = ["https://vics-imac-1.tail137b4f2.ts.net"]
         for seed in seed_nodes:
@@ -123,50 +134,52 @@ class AxiomNode:
         if peer_url:
             self.add_or_update_peer(peer_url)
 
-        self.investigation_queue = []
-        self.active_proposals = {}
+        self.investigation_queue: list[Any] = []
+        self.active_proposals: dict[Any, Any] = {}
         self.thread_pool = ThreadPoolExecutor(max_workers=10)
 
         # Scheduler configuration for main cycles and idle ticks.
-        self.main_cycle_interval = int(
+        self.main_cycle_interval: int = int(
             os.environ.get("AXIOM_MAIN_CYCLE_INTERVAL", "900")
         )
-        self.idle_tick_interval = float(
+        self.idle_tick_interval: float = float(
             os.environ.get("AXIOM_IDLE_TICK_INTERVAL", "1.0")
         )
         # How often to run the full idle suite (coarse-grained grouping of idle tasks).
-        self.idle_suite_interval = float(
+        self.idle_suite_interval: float = float(
             os.environ.get("AXIOM_IDLE_SUITE_INTERVAL", "150.0")
         )
 
         # Idle task registry state.
-        self.idle_tasks = []
-        self._idle_task_index = 0
-        self._last_idle_learning_ts = 0.0
+        self.idle_tasks: list[Callable[[], None]] = []
+        self._idle_task_index: int = 0
+        self._last_idle_learning_ts: float = 0.0
 
         # Conversation subsystem (populated during idle training).
-        self._conversation_patterns = []
-        self._conversation_training_state = {}
+        self._conversation_patterns: list[Any] = []
+        self._conversation_training_state: dict[str, Any] = {}
         # Code introspection and health snapshots.
-        self._code_map = None
-        self._endpoint_registry = []
-        self._last_code_introspection_ts = 0.0
-        self._duplicate_summary = []
-        self._conflict_summary = []
-        self._last_data_quality_ts = 0.0
-        self._health_snapshot = None
-        self._last_health_snapshot_ts = 0.0
-        self._self_check_results = []
-        self._last_self_check_ts = 0.0
-        self._last_main_cycle_ts = 0.0
-        self._last_fragment_audit_ts = 0.0
-        self._idle_throttle_log = {}
-        self._idle_suite_header_active = False
-        self.node_role = "bootstrap" if port == 8009 else "peer"
+        self._code_map: dict[str, Any] | None = None
+        self._endpoint_registry: list[dict[str, Any]] = []
+        self._last_code_introspection_ts: float = 0.0
+        self._duplicate_summary: list[Any] = []
+        self._conflict_summary: list[Any] = []
+        self._last_data_quality_ts: float = 0.0
+        self._health_snapshot: dict[str, Any] | None = None
+        self._last_health_snapshot_ts: float = 0.0
+        self._self_check_results: list[Any] = []
+        self._last_self_check_ts: float = 0.0
+        self._last_main_cycle_ts: float = 0.0
+        self._last_fragment_audit_ts: float = 0.0
+        self._idle_throttle_log: dict[str, float] = {}
+        self._idle_suite_header_active: bool = False
+        self.node_role: str = "bootstrap" if port == 8009 else "peer"
 
         if port == 8009:
             # Bootstrap node must always use the canonical database name
-            self.db_path = os.environ.get("AXIOM_DB_PATH", "axiom_ledger.db")
+            self.db_path: str = os.environ.get(
+                "AXIOM_DB_PATH", "axiom_ledger.db"
+            )
         else:
             # Peer node uses port-specific name if no ENV var is set
             default_db_name = f"axiom_ledger_{port}.db"
@@ -175,7 +188,7 @@ class AxiomNode:
         initialize_database(self.db_path)
         # Optional self-healing migration to keep fact storage consistent.
         migrate_fact_content_to_compressed(self.db_path)
-        self.search_ledger_for_api = search_ledger_for_api
+        self.search_ledger_for_api: Callable[..., Any] = search_ledger_for_api
 
         # Register built-in idle tasks.
         self.idle_tasks.append(self._idle_learning_cycle)
@@ -186,7 +199,7 @@ class AxiomNode:
         self.idle_tasks.append(self._idle_health_snapshot)
         self.idle_tasks.append(self._idle_self_checks)
 
-    def bootstrap_sync(self):
+    def bootstrap_sync(self) -> bool | None:
         """Perform initial sync with bootstrap peers."""
         if not self.peers:
             logger.info(
@@ -211,9 +224,9 @@ class AxiomNode:
                     peer_url,
                     self.db_path,
                 )
-                if appended > 0 or (
-                    peer_height > get_chain_head(self.db_path)[1]
-                ):
+                head = get_chain_head(self.db_path)
+                head_height = head[1] if head is not None else -1
+                if appended > 0 or peer_height > head_height:
                     chain_updated = True
             except Exception as e:
                 logger.warning(
@@ -223,7 +236,7 @@ class AxiomNode:
                 )
         return chain_updated
 
-    def print_mesh_status(self, force: bool = False):
+    def print_mesh_status(self, force: bool = False) -> None:
         """Show peer mesh status in logs."""
         now = time.time()
         if not force and now - self._last_mesh_print < 5:
@@ -256,7 +269,7 @@ class AxiomNode:
                 )
         print("-" * 60)
 
-    def add_or_update_peer(self, peer_url):
+    def add_or_update_peer(self, peer_url: str | None) -> None:
         """Identify and update new nodes."""
         if not peer_url:
             return
@@ -287,7 +300,7 @@ class AxiomNode:
         }
         logger.info(f"\033[92m[Mesh] New node identified: {peer_url}\033[0m")
 
-        def immediate_handshake():
+        def immediate_handshake() -> None:
             time.sleep(2)
             try:
                 sync_status, new_facts = sync_with_peer(
@@ -306,7 +319,9 @@ class AxiomNode:
 
         threading.Thread(target=immediate_handshake, daemon=True).start()
 
-    def _update_reputation(self, peer_url, sync_status, new_facts_count):
+    def _update_reputation(
+        self, peer_url: str, sync_status: str, new_facts_count: int
+    ) -> None:
         if peer_url not in self.peers:
             return
         from src.config import (
@@ -330,17 +345,31 @@ class AxiomNode:
             new_rep = current_rep
         self.peers[peer_url]["reputation"] = max(0.0, min(1.0, new_rep))
 
-    def _fetch_from_peer(self, peer_url, search_term):
+    def _fetch_from_peer(self, peer_url: str, search_term: str) -> list[Any]:
         try:
             query_url = f"{peer_url}/local_query?term={search_term}&include_uncorroborated=true"
             response = requests.get(query_url, timeout=5)
             response.raise_for_status()
-            return response.json().get("results", [])
+
+            # Parse the JSON (Mypy sees this as 'Any')
+            data = response.json()
+
+            # 1. Ensure the JSON is actually a dictionary
+            if isinstance(data, dict):
+                results = data.get("results", [])
+
+                # 2. Ensure the 'results' key actually contains a list
+                if isinstance(results, list):
+                    return results
+
+            # Fallback if the JSON structure was unexpected
+            return []
+
         except Exception as e:
             logger.error(f"Error fetching from peer: {e}")
             return []
 
-    def _reflection_cycle(self):
+    def _reflection_cycle(self) -> None:
         logger.info(
             "\033[95m[Reflection] Starting Lexical Mesh integration... ---\033[0m",
         )
@@ -354,13 +383,18 @@ class AxiomNode:
         for fact in unprocessed_facts:
             try:
                 raw = fact.get("fact_content")
-                text = raw
+                text = ""
                 if isinstance(raw, (bytes, bytearray)):
                     try:
                         text = zlib.decompress(raw).decode("utf-8")
                     except (zlib.error, ValueError):
                         continue
-                if crucible.integrate_fact_to_mesh(text):
+                elif isinstance(raw, str):
+                    text = raw
+                else:
+                    text = str(raw) if raw is not None else ""
+
+                if text and crucible.integrate_fact_to_mesh(text):
                     mark_fact_as_processed(fact["fact_id"], self.db_path)
             except Exception as e:
                 logger.error(f"Failed to integrate fact: {e}")
@@ -368,7 +402,7 @@ class AxiomNode:
             "Success: Neural pathways strengthened. Idle cycle complete.",
         )
 
-    def _idle_learning_cycle(self):
+    def _idle_learning_cycle(self) -> None:
         """Productive tasks between main cycles: rediscover links, reinforce synapses."""
         try:
             # Throttle heavy idle learning so it does not run on every tick.
@@ -449,7 +483,7 @@ class AxiomNode:
         except Exception as e:
             logger.info("[Idle:%s] Learning cycle skipped: %s", self.port, e)
 
-    def _run_main_cycle(self):
+    def _run_main_cycle(self) -> None:
         """One full main cycle: fetch topics, integrate facts, sync peers, and housekeeping."""
         self._last_main_cycle_ts = time.time()
         logger.info("\033[2m[AXIOM ENGINE CYCLE START]\033[0m")
@@ -523,7 +557,7 @@ class AxiomNode:
         self._prune_ledger()
         self.print_mesh_status(force=True)
 
-    def _idle_conversation_training(self):
+    def _idle_conversation_training(self) -> None:
         """Incrementally prepare conversation patterns for fast, non-ledger responses.
 
         Work is intentionally small per tick: compile a few patterns at a time.
@@ -559,7 +593,7 @@ class AxiomNode:
                 len(self._conversation_patterns),
             )
 
-    def _idle_code_introspection(self):
+    def _idle_code_introspection(self) -> None:
         """Periodically refresh an internal map of modules and HTTP endpoints.
 
         This is throttled to avoid unnecessary filesystem work.
@@ -595,7 +629,7 @@ class AxiomNode:
                 "[Idle-Code:%s] Code introspection skipped: %s", self.port, e
             )
 
-    def _idle_data_quality(self):
+    def _idle_data_quality(self) -> None:
         """Periodically sample the ledger for duplicate and conflicting facts.
 
         Results are cached in-memory for later inspection or reporting.
@@ -631,7 +665,7 @@ class AxiomNode:
                 "[Idle-Data:%s] Data quality scan skipped: %s", self.port, e
             )
 
-    def _idle_health_snapshot(self):
+    def _idle_health_snapshot(self) -> None:
         """Periodically compute a lightweight health snapshot of the ledger/db."""
         now = time.time()
         # Run at most once every 10 minutes.
@@ -678,7 +712,7 @@ class AxiomNode:
                 "[Idle-Health:%s] Health snapshot skipped: %s", self.port, e
             )
 
-    def _idle_self_checks(self):
+    def _idle_self_checks(self) -> None:
         """Occasionally run a few deterministic self-queries against our own /think endpoint."""
         now = time.time()
         # Run at most once every 3 hours.
@@ -709,7 +743,7 @@ class AxiomNode:
                 "[Idle-SelfCheck:%s] Self-checks skipped: %s", self.port, e
             )
 
-    def _idle_fragment_audit(self):
+    def _idle_fragment_audit(self) -> None:
         """Refine fragment classification and, when appropriate, seek simple consensus
 
         from peers about low-quality fragments.
@@ -760,11 +794,13 @@ class AxiomNode:
 
                 raw = row["fact_content"]
                 try:
-                    text = (
-                        _zlib.decompress(raw).decode("utf-8")
-                        if isinstance(raw, (bytes, bytearray))
-                        else (raw or "")
-                    )
+                    text = ""
+                    if isinstance(raw, (bytes, bytearray)):
+                        text = _zlib.decompress(raw).decode("utf-8")
+                    elif isinstance(raw, str):
+                        text = raw
+                    else:
+                        text = str(raw) if raw is not None else ""
                 except Exception as e:
                     logger.error(f"Error processing fact content: {e}")
                     continue
@@ -967,7 +1003,7 @@ class AxiomNode:
             parts.append(f"Average trust score: {avg_trust:.3f}.")
         return " ".join(parts)
 
-    def get_idle_state(self) -> dict:
+    def get_idle_state(self) -> dict[str, Any]:
         """Introspect idle scheduling and last-run timestamps for debugging."""
         now = time.time()
 
@@ -992,7 +1028,7 @@ class AxiomNode:
             "last_fragment_audit_age_sec": age(self._last_fragment_audit_ts),
         }
 
-    def _run_idle_tick(self):
+    def _run_idle_tick(self) -> None:
         """Run a single idle task, if any are registered."""
         if not self.idle_tasks:
             return
@@ -1007,7 +1043,7 @@ class AxiomNode:
                 e,
             )
 
-    def _run_idle_suite(self):
+    def _run_idle_suite(self) -> None:
         """Run all registered idle tasks in a fixed sequence so their logs
 
         appear grouped together for easier debugging.
@@ -1033,7 +1069,7 @@ class AxiomNode:
         interval: float,
         now: float,
         last_run_ts: float,
-    ):
+    ) -> None:
         """Log idle tasks being throttled
 
         rate-limit those logs so they do not flood the console.
@@ -1053,7 +1089,7 @@ class AxiomNode:
         )
         self._idle_throttle_log[name] = now
 
-    def _ensure_idle_suite_header(self):
+    def _ensure_idle_suite_header(self) -> None:
         """Ensure we only emit the Idle-Suite Start line once per suite,
 
         and only when at least one idle task actually performs work.
@@ -1063,7 +1099,7 @@ class AxiomNode:
         logger.info("[Idle-Suite:%s] Start.", self.port)
         self._idle_suite_header_active = True
 
-    def _background_loop(self):
+    def _background_loop(self) -> None:
         """Start loop cycles."""
         logger.info("Starting continuous background cycle.")
         next_cycle = time.time()
@@ -1084,7 +1120,7 @@ class AxiomNode:
                 )
                 time.sleep(sleep_for)
 
-    def _prune_ledger(self):
+    def _prune_ledger(self) -> None:
         """Delete old, uncorroborated facts and manage node storage size."""
         prune_threshold_days = 1
 
@@ -1113,7 +1149,7 @@ class AxiomNode:
             f"[Housekeeping] Deleted {deleted_count} stale, uncorroborated records.",
         )
 
-    def start_background_tasks(self):
+    def start_background_tasks(self) -> None:
         """Thread background tasks."""
         background_thread = threading.Thread(
             target=self._background_loop,
@@ -1122,8 +1158,13 @@ class AxiomNode:
         background_thread.start()
 
 
-def _register_sync_caller():
+node_instance: AxiomNode | None = None
+
+
+def _register_sync_caller() -> None:
     """Sync Caller Registration."""
+    if node_instance is None:
+        return
     caller_url = (
         (request.headers.get("X-Axiom-Peer") or "").strip().rstrip("/")
     )
@@ -1132,8 +1173,10 @@ def _register_sync_caller():
 
 
 @app.route("/local_query", methods=["GET"])
-def handle_local_query():
+def handle_local_query() -> Response | tuple[Response, int]:
     """Route api for local queries to the node."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     _register_sync_caller()
     search_term = request.args.get("term", "")
     include_uncorroborated = (
@@ -1148,23 +1191,29 @@ def handle_local_query():
 
 
 @app.route("/mesh_query", methods=["GET"])
-def handle_mesh_query():
+def handle_mesh_query() -> Response | tuple[Response, int]:
     """Route api for queries to the node."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     search_term = request.args.get("term", "")
     data = query_lexical_mesh(search_term, db_path=node_instance.db_path)
     return jsonify(data)
 
 
 @app.route("/get_peers", methods=["GET"])
-def handle_get_peers():
+def handle_get_peers() -> Response | tuple[Response, int]:
     """Route api for peer connections."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     _register_sync_caller()
     return jsonify({"peers": node_instance.peers})
 
 
 @app.route("/get_chain_head", methods=["GET"])
-def handle_get_chain_head():
+def handle_get_chain_head() -> Response | tuple[Response, int]:
     """Route api to obtain the chain head for blocks."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     _register_sync_caller()
     head = get_chain_head(db_path=node_instance.db_path)
     if head is None:
@@ -1174,8 +1223,10 @@ def handle_get_chain_head():
 
 
 @app.route("/get_blocks_after", methods=["GET"])
-def handle_get_blocks_after():
+def handle_get_blocks_after() -> Response | tuple[Response, int]:
     """Route api for blocks from peer."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     _register_sync_caller()
     try:
         height = int(request.args.get("height", -1))
@@ -1186,8 +1237,10 @@ def handle_get_blocks_after():
 
 
 @app.route("/get_fact_ids", methods=["GET"])
-def handle_get_fact_ids():
+def handle_get_fact_ids() -> Response | tuple[Response, int]:
     """Route api and fetch get facts from ledger."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     _register_sync_caller()
     conn = sqlite3.connect(node_instance.db_path)
     cursor = conn.cursor()
@@ -1198,10 +1251,13 @@ def handle_get_fact_ids():
 
 
 @app.route("/get_facts_by_id", methods=["POST"])
-def handle_get_facts_by_id():
+def handle_get_facts_by_id() -> Response | tuple[Response, int]:
     """Route api and fetch from ledger."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     _register_sync_caller()
-    requested_ids = request.json.get("fact_ids", [])
+    req_json = request.json or {}
+    requested_ids = req_json.get("fact_ids", [])
     all_facts = node_instance.search_ledger_for_api(
         "",
         include_uncorroborated=True,
@@ -1211,8 +1267,10 @@ def handle_get_facts_by_id():
 
 
 @app.route("/think", methods=["GET"])
-def handle_thinking():
+def handle_thinking() -> Response | tuple[Response, int]:
     """Route api and fetch from ledger."""
+    if node_instance is None:
+        return jsonify({"error": "Node not initialized"}), 503
     query = request.args.get("query", "")
     if not query:
         return jsonify({"response": "System standby. Awaiting input."})
@@ -1247,7 +1305,7 @@ def handle_thinking():
 
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
-def serve_static_files(path):
+def serve_static_files(path: str) -> Response | tuple[Response, int]:
     """Route api to serve HTML."""
     if path != "" and os.path.exists(os.path.join(app.root_path, path)):
         return send_from_directory(app.root_path, path)
@@ -1255,7 +1313,7 @@ def serve_static_files(path):
 
 
 @app.route("/sys_status", methods=["GET"])
-def handle_sys_status():
+def handle_sys_status() -> Response | tuple[Response, int]:
     """Receives UI status updates (like mute state) from the web client."""
     muted = request.args.get("muted", "false").lower() == "true"
     if muted:
@@ -1266,7 +1324,7 @@ def handle_sys_status():
 
 
 @app.route("/debug/idle_state", methods=["GET"])
-def handle_idle_state():
+def handle_idle_state() -> Response | tuple[Response, int]:
     """Debug-only endpoint exposing idle scheduling state."""
     if node_instance is None:
         return jsonify({"error": "Node is not initialized"}), 503
@@ -1274,7 +1332,7 @@ def handle_idle_state():
 
 
 @app.route("/fragment_opinion", methods=["GET"])
-def handle_fragment_opinion():
+def handle_fragment_opinion() -> Response | tuple[Response, int]:
     """Return this node's opinion about a specific fact's fragment status.
 
     Used for simple cross-node consensus during idle fragment audits.
@@ -1326,14 +1384,16 @@ if __name__ == "__main__":
 
         initial_sync_complete = True
         if port_val != 8009 and node_instance.peers:
-            initial_sync_complete = node_instance.bootstrap_sync()
-            if not initial_sync_complete:
+            initial_sync_complete_res = node_instance.bootstrap_sync()
+            if not initial_sync_complete_res:
                 logger.warning(
                     "[INIT] Initial chain sync failed. Relying on background loop."
                 )
 
         node_instance.start_background_tasks()
-    logger.info(
-        f"\033[2mAxiom Identity: {node_instance.advertised_url}\033[0m",
-    )
-    app.run(host=node_instance.host, port=node_instance.port, debug=False)
+
+    if node_instance is not None:
+        logger.info(
+            f"\033[2mAxiom Identity: {node_instance.advertised_url}\033[0m",
+        )
+        app.run(host=node_instance.host, port=node_instance.port, debug=False)

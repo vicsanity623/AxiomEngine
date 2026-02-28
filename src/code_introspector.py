@@ -8,6 +8,7 @@ import ast
 import logging
 import os
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def build_module_map(src_root: str) -> dict[str, ModuleSummary]:
     return module_map
 
 
-def build_endpoint_registry(node_file: str) -> list[dict]:
+def build_endpoint_registry(node_file: str) -> list[dict[str, Any]]:
     """Parse Flask route decorators from the main node module.
 
     Args:
@@ -117,7 +118,9 @@ def build_endpoint_registry(node_file: str) -> list[dict]:
     except Exception:
         return []
 
-    endpoints: list[dict] = []
+    endpoints: list[
+        dict[str, Any]
+    ] = []  # <-- Also updated this variable annotation for consistency
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef):

@@ -4,6 +4,7 @@ import hashlib
 import logging
 import sqlite3
 import zlib
+from typing import Any
 
 import requests
 
@@ -16,7 +17,7 @@ from src.blockchain import (
 logger = logging.getLogger(__name__)
 
 
-def verify_hash(content, fact_id):
+def verify_hash(content: str | None, fact_id: str | None) -> bool:
     """Ensure the fact ID is the mathematical hash of the content."""
     if not content or not fact_id:
         return False
@@ -24,7 +25,9 @@ def verify_hash(content, fact_id):
     return calculated_hash == fact_id
 
 
-def sync_with_peer(node_instance, peer_url, db_path: str):
+def sync_with_peer(
+    node_instance: Any, peer_url: str, db_path: str
+) -> tuple[str, list[dict[str, Any]]]:
     """Synchronize the local ledger and the peer list. Implement 'Gossip Discovery' to ensure the network loop remains intact."""
     logger.info(
         f"\033[2m--- [P2P Sync] Attempting to sync with peer: {peer_url} ---\033[0m",
@@ -79,7 +82,7 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
 
         chunk_size = 50
         facts_added_count = 0
-        new_facts_payload = []
+        new_facts_payload: list[dict[str, Any]] = []
 
         for i in range(0, len(missing_fact_ids), chunk_size):
             chunk = missing_fact_ids[i : i + chunk_size]
@@ -164,7 +167,9 @@ def sync_with_peer(node_instance, peer_url, db_path: str):
         return "SYNC_ERROR", []
 
 
-def sync_chain_with_peer(node_instance, peer_url, db_path: str):
+def sync_chain_with_peer(
+    node_instance: Any, peer_url: str, db_path: str
+) -> tuple[int, int]:
     """Sync blockchain from peer: if peer has a longer chain, fetch new blocks and append.
 
     Return (blocks_appended_count, peer_chain_height) for logging.
@@ -179,7 +184,7 @@ def sync_chain_with_peer(node_instance, peer_url, db_path: str):
         head_resp.raise_for_status()
         peer_head = head_resp.json()
         peer_height = int(peer_head.get("height", -1))
-        peer_height = int(peer_head.get("height", -1))
+
         if peer_height < 0:
             return 0, peer_height
 
