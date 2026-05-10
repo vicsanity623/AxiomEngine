@@ -140,10 +140,54 @@ def compile_patterns(patterns: list[ConversationPattern]) -> None:
         p.compile()
 
 
+def _lookup_topic_in_ledger(
+    topic: str, db_path: str = "axiom_ledger.db"
+) -> str:
+    """Search the ledger for trusted facts about a topic and format a response.
+
+    Returns a grounded response string, or an empty string if nothing found.
+    """
+    try:
+        from src.api_query import search_ledger_for_api
+
+        facts = search_ledger_for_api(
+            topic,
+            include_uncorroborated=False,
+            include_disputed=False,
+            db_path=db_path,
+        )
+        if not facts:
+            return (
+                f"I have no verified facts about '{topic}' in my ledger yet. "
+                "My knowledge base grows continuously — try again later or "
+                "ask about a current news topic."
+            )
+
+        # Surface the highest-trust fact as the primary answer.
+        best = sorted(facts, key=lambda f: f.get("trust_score", 0), reverse=True)[0]
+        content = best.get("fact_content", "").strip()
+        source = best.get("source_url", "")
+        extra = len(facts) - 1
+
+        response = f"{content}"
+        if source:
+            response += f"\n\nSource: {source}"
+        if extra > 0:
+            response += (
+                f"\n\nAdditionally, {extra} other verified "
+                f"stream(s) corroborate this."
+            )
+        return response
+
+    except Exception:
+        return ""
+
+
 def match_query(
     query: str,
     patterns: list[ConversationPattern],
     min_score: float = 0.6,
+    db_path: str = "axiom_ledger.db",
 ) -> tuple[bool, str]:
     """Try to match query against known patterns.
 
@@ -151,6 +195,9 @@ def match_query(
     - Exact normalized string match: score = 1.0 * weight
     - Regex full match: score = 0.8 * weight
     - Normalized contains pattern literal (no slots): score = 0.7 * weight
+
+    For slot-based patterns (e.g. 'what is <topic>'), the captured slot value
+    is used to query the ledger directly and return a grounded response.
     """
     q_norm = _normalize(query)
     if not q_norm or not patterns:
@@ -158,6 +205,8 @@ def match_query(
 
     best_score = 0.0
     best_response = ""
+    best_slots: dict[str, str] = {}
+    best_pattern: ConversationPattern | None = None
 
     for p in patterns:
         base = p.weight or 1.0
@@ -169,15 +218,21 @@ def match_query(
             if score > best_score:
                 best_score = score
                 best_response = p.response
+                best_slots = {}
+                best_pattern = p
             continue
 
-        # Regex match (supports slots).
-        if p.regex is not None and p.regex.match(query):
-            score = 0.8 * base
-            if score > best_score:
-                best_score = score
-                best_response = p.response
-            continue
+        # Regex match (supports slots) — extract named groups.
+        if p.regex is not None:
+            m = p.regex.match(query)
+            if m:
+                score = 0.8 * base
+                if score > best_score:
+                    best_score = score
+                    best_response = p.response
+                    best_slots = m.groupdict()
+                    best_pattern = p
+                continue
 
         # Simple containment only for non-slot templates.
         if (
@@ -189,7 +244,26 @@ def match_query(
             if score > best_score:
                 best_score = score
                 best_response = p.response
+                best_slots = {}
+                best_pattern = p
 
-    if best_score >= min_score:
-        return True, best_response
-    return False, ""
+    if best_score < min_score:
+        return False, ""
+
+    # If the winning pattern has slot captures, look them up in the ledger.
+    if best_slots and best_pattern is not None:
+        # Use the first captured slot value as the topic to search.
+        topic = next(iter(best_slots.values()), "").strip()
+        if topic:
+            grounded = _lookup_topic_in_ledger(topic, db_path=db_path)
+            if grounded:
+                return True, grounded
+            # No ledger results — fall through to the static response
+            # but replace the placeholder with the actual topic name.
+            filled = best_response
+            for slot_name, slot_value in best_slots.items():
+                filled = filled.replace(f"<{slot_name}>", slot_value)
+            return True, filled
+
+    return True, best_response
+
