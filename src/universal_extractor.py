@@ -46,7 +46,7 @@ class ContentSanitizer:
         ]
         if any(g in text.lower() for g in garbage):
             return False
-        return not (text[0].isupper() and text[-1] in '.!?"')
+        return text[0].isupper() and text[-1] in '.!?"'
 
     @staticmethod
     def clean_text_block(raw_text: str | None, topic: str) -> str:
