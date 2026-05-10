@@ -1,6 +1,7 @@
 """Module containing the inference engine for the Axiom system."""
 
 import logging
+import re
 import sqlite3
 import zlib
 from typing import Any
@@ -115,6 +116,22 @@ def think(
             "grounded_facts": [],
         }
 
+    CREATIVE_SIGNALS = {
+        "write", "create", "generate", "make up", "imagine",
+        "story", "novel", "poem", "fiction", "essay", "joke",
+        "pretend", "roleplay", "invent", "compose",
+    }
+    query_words = set(user_query.lower().split())
+    if query_words & CREATIVE_SIGNALS:
+        return {
+            "response": (
+                "Axiom does not generate content or fiction. "
+                "I only respond with verified facts from my knowledge base. "
+                "Try asking a factual question instead."
+            ),
+            "grounded_facts": [],
+        }
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -142,8 +159,12 @@ def think(
                 continue
 
             text_lower = text.lower()
-            if any(atom in text_lower for atom in query_atoms):
+            if any(
+                re.search(rf"\b{re.escape(atom)}\b", text_lower)
+                for atom in query_atoms
+            ):
                 grounded_facts.append(
+
                     {
                         "fact_id": row["fact_id"],
                         "fact_content": text,
