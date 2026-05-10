@@ -31,7 +31,7 @@ def _float(key: str, default: float) -> float:
 # Example: 50 = faster verification, 200 = stricter.
 REQUIRED_CORROBORATING_DOMAINS = _int(
     "AXIOM_REQUIRED_CORROBORATING_DOMAINS",
-    100,
+    3,
 )
 
 # --- Peer reputation ---
